@@ -1,0 +1,8 @@
+.vscode
+__pycache__
+temp
+
+dataset/*
+!dataset/dataset.py
+
+resources/*
