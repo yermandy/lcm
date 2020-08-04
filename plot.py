@@ -20,25 +20,52 @@ def _plot(args, from_epoch=1, fontsize = 14):
     fig.savefig(img_path, dpi = 300, bbox_inches='tight')
     plt.close()
 
-def plot_accuracy(accuracies):
 
-    args = {
-        'curves': accuracies,
-        'plot_name': 'accuracy.png',
+def plot_accuracy(curves: tuple, fold_number):
+    _plot({
+        'curves': curves,
+        'plot_name': f'{fold_number}accuracy.png',
         'x_label': 'Epoch',
         'y_label': 'Accuracy'
-    }
-
-    _plot(args)
+    })
 
 
-def plot_mae(maes, from_epoch=1):
-
-    args = {
-        'curves': maes,
-        'plot_name': 'mae.png',
+def plot_mae(curves: tuple, fold_number):
+    _plot({
+        'curves': curves,
+        'plot_name': f'{fold_number}_mae.png',
         'x_label': 'Epoch',
         'y_label': 'MAE'
-    }
+    })
 
-    _plot(args)
+
+def plot_gerr(curves: tuple, fold_number):
+    _plot({
+        'curves': curves,
+        'plot_name': f'{fold_number}_gerr.png',
+        'x_label': 'Epoch',
+        'y_label': 'GERR'
+    })
+
+
+def plot_cs5(curves: tuple, fold_number):
+    _plot({
+        'curves': curves,
+        'plot_name': f'{fold_number}_cs5.png',
+        'x_label': 'Epoch',
+        'y_label': 'CS5'
+    })
+
+
+def plot_results(results: dict, fold_number):
+    mae, gerr, cs5 = [], [], []
+    
+    stages = ('Training', 'Validation', 'Testing')
+    for curve, stage in zip(results.values(), stages):
+        mae.append((curve['mae'], stage))
+        gerr.append((curve['gerr'], stage))
+        cs5.append((curve['cs5'], stage))
+
+    plot_mae(mae, fold_number)
+    plot_gerr(gerr, fold_number)
+    plot_cs5(cs5, fold_number)
