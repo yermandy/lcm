@@ -14,6 +14,7 @@ from plot import plot_accuracy, plot_mae, plot_results
 from os import makedirs
 from copy import deepcopy
 from fold import Fold
+from prettytable import PrettyTable
 
 
 parser = argparse.ArgumentParser(description='Training')
@@ -199,9 +200,12 @@ def train():
     decoder = {v: k for k, v in encoder.items()}
     criterion = nn.CrossEntropyLoss()
 
+    table = PrettyTable()
+    table.field_names = ['', 'mae', 'gerr', 'cs5']
+
     for epoch in range(epochs):
 
-        mae_fold, gerr_fold, cs5_fold = [], [], []
+        epoch_results = []
 
         ## k-Fold Cross-Validation
         for i_th_fold, fold in enumerate(folds):
@@ -210,6 +214,8 @@ def train():
             net = fold.net
             optimizer = fold.optimizer
             results = fold.results
+
+            fold_results = []
 
             for loader in fold.loaders:
 
@@ -253,17 +259,25 @@ def train():
                 results[loader_name]['gerr'].append(gerr)
                 results[loader_name]['cs5'].append(cs5)
 
-                mae_fold.append(mae)
-                gerr_fold.append(gerr)
-                cs5_fold.append(cs5)
+                fold_results.append([mae, gerr, cs5]) 
 
             plot_results(results, fold.number)
+
+            epoch_results.append(fold_results)
         
             print()
-                
-        print(f'mae:  {np.mean(mae_fold):.2f} ({np.std(mae_fold):.2f})')
-        print(f'gerr: {np.mean(gerr_fold):.2f} ({np.std(gerr_fold):.2f})')
-        print(f'cs2:  {np.mean(cs5_fold):.2f} ({np.std(cs5_fold):.2f})\n')
+
+        table.clear_rows()
+        
+        mean = np.mean(epoch_results, axis=0)
+        std = np.std(epoch_results, axis=0)
+        for stage, mu, sigma in zip(['trn', 'val', 'tst'], mean, std):
+            table.add_row([stage, *[f'{m:.2f} ({s:.2f})' for m, s in zip(mu, sigma)]])
+
+        summary = f'Epoch {epoch + 1} summary:\n{table}\n\n'
+        print(summary)
+        with open('results/checkpoints/summary.txt', 'a') as file:
+            file.write(summary)
 
 
 if __name__ == "__main__":

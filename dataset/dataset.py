@@ -4,18 +4,21 @@ from torch.utils.data import Dataset
 from PIL import Image, ImageFile
 from warnings import filterwarnings
 
+
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 filterwarnings("ignore", "(Possibly )?corrupt EXIF data", UserWarning)
 
 
 class ListDataset(Dataset):
-    def __init__(self, args, training=False):
+    def __init__(self, args, name='', training=False):
 
         self.image_paths = args['image_paths']
         self.boxes = args['boxes']
         self.labels = args['labels']
+        self.training = training
+        self.name = name
 
-        if training:
+        if self.training:
             self.transform = transforms.Compose([
                 transforms.Resize(140),
                 transforms.RandomCrop(128),
