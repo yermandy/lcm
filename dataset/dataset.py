@@ -3,6 +3,7 @@ import torchvision.transforms as transforms
 from torch.utils.data import Dataset
 from PIL import Image, ImageFile
 import numpy as np
+from encoder_decoder import encode_labels
 
 # Allow truncated images to be loaded
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -63,10 +64,10 @@ class RandomDataset(Dataset):
         return self.values[index], self.labels[index]
 
 
-def combine_datasets(datasets_paths):
+def combine_datasets(datasets):
     combined_db = None
     combined_folders = []
-    for dataset_id, (path, folders) in enumerate(datasets_paths):
+    for dataset_id, (path, folders) in enumerate(datasets):
         
         db = np.genfromtxt(path, delimiter=',', skip_header=1, dtype=str)
         db[:, 13] = np.char.add(f'{dataset_id}_', db[:, 13])
@@ -93,3 +94,34 @@ def combine_datasets(datasets_paths):
         combined_folds.append(fold)
 
     return combined_db, combined_folds
+
+def create_fold_stages(db, selected_folders, encoder):
+    ## filter dataset by age
+    age = db[:, 10].astype(int)
+    age_filter = np.flatnonzero((age >= 1) & (age <= 90))
+    db = db[age_filter]
+
+    ## split trn, val and tst
+    fold = db[:, 13]
+    get_indices = lambda x_fold: np.flatnonzero(np.isin(fold, x_fold) == True)
+
+    trn_idx = get_indices(selected_folders[0])
+    val_idx = get_indices(selected_folders[1])
+    tst_idx = get_indices(selected_folders[2])
+
+    paths = db[:, 0]
+    boxes = db[:, [1,2,5,6]].astype(int)
+    age, gender = db[:, 10].astype(int), db[:, 11]
+
+    labels = encode_labels(age, gender, encoder)
+
+    stages = []
+    for idx in [trn_idx, val_idx, tst_idx]:
+
+        stages.append({
+            'image_paths': paths[idx],
+            'boxes': boxes[idx],
+            'labels': labels[idx],
+        })
+
+    return stages
