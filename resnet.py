@@ -202,6 +202,13 @@ class ResNet(nn.Module):
     def forward(self, x):
         return self._forward_impl(x)
 
+    def load_checkpoint(self, checkpoint_path):
+        device = next(self.parameters()).device
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+        if 'model_state_dict' in checkpoint:
+            print(f'Pre-trained model: {checkpoint_path}')
+            self.load_state_dict(checkpoint['model_state_dict'])
+
 
 def _resnet(block, layers, **kwargs):
     if 'num_classes' in kwargs:
