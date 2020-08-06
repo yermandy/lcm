@@ -9,12 +9,14 @@ from torch.optim import Adam, SGD
 from torch.utils.data import DataLoader
 
 from resnet import resnet18, resnet50
-from dataset.dataset import ListDataset, RandomDataset
+from dataset.dataset import ListDataset, RandomDataset, combine_datasets
 from plot import plot_accuracy, plot_mae, plot_results
 from os import makedirs
 from copy import deepcopy
 from fold import Fold
 from prettytable import PrettyTable
+from config import *
+from encoder_decoder import encode_labels, decode_labels, create_encoder_decoder
 
 
 parser = argparse.ArgumentParser(description='Training')
@@ -26,64 +28,36 @@ args = parser.parse_args()
 
 makedirs('results/checkpoints', exist_ok=True)
 
-
-def encode_labels(age, gender):
-    labels = []
-
-    encoder = {}
-    uid = 0
-    for g in ['F', 'M']:
-        for a in np.arange(1, 91, 1, dtype=np.uint8):
-            encoder[(a, g)] = uid
-            uid += 1
-
-    for a, g in zip(age, gender):
-        labels.append(encoder[(a, g)])
-
-    return np.array(labels), encoder
-
-
-def decode_labels(encoded_labels, decoder):
-    age, gender = [], []
-    for label in encoded_labels:
-        a, g = decoder[label]
-        age.append(a)
-        gender.append(g)
-    return np.array(age), np.array(gender)
-
-
-def unpack_dataset(dataset_path, folds):
-    db = np.genfromtxt(dataset_path, delimiter=',', skip_header=1, dtype=str,)
-
+def create_fold_stages(db, selected_folders, encoder):
     ## filter dataset by age
     age = db[:, 10].astype(int)
     age_filter = np.flatnonzero((age >= 1) & (age <= 90))
     db = db[age_filter]
 
     ## split trn, val and tst
-    fold = db[:, 13].astype(int)
+    fold = db[:, 13]
     get_indices = lambda x_fold: np.flatnonzero(np.isin(fold, x_fold) == True)
 
-    trn_idx = get_indices(folds[0])
-    val_idx = get_indices(folds[1])
-    tst_idx = get_indices(folds[2])
+    trn_idx = get_indices(selected_folders[0])
+    val_idx = get_indices(selected_folders[1])
+    tst_idx = get_indices(selected_folders[2])
 
     paths = db[:, 0]
     boxes = db[:, [1,2,5,6]].astype(int)
     age, gender = db[:, 10].astype(int), db[:, 11]
 
-    labels, encoder = encode_labels(age, gender)
+    labels = encode_labels(age, gender, encoder)
 
-    datasets = []
+    stages = []
     for idx in [trn_idx, val_idx, tst_idx]:
 
-        datasets.append({
+        stages.append({
             'image_paths': paths[idx],
             'boxes': boxes[idx],
             'labels': labels[idx],
         })
 
-    return datasets, encoder
+    return stages
 
 
 def predict(net, loader, decoder, desc=''):
@@ -174,30 +148,23 @@ def train():
         'shuffle': True
     }
 
-    epochs = 200
-    lr = 0.001
+    encoder, decoder = create_encoder_decoder()
 
-    folders = [
-        ## [trn], [val], [tst]
-        [[1, 2, 3, 4, 5, 6, 7], [8], [9, 10]],
-        [[1, 6, 2, 9, 3, 10, 8], [4], [5, 7]],
-        [[7, 9, 10, 5, 8, 3, 4], [6], [2, 1]]
-    ]
-
-    dataset_path = 'resources/agedb_28-Feb-2020_f.csv'
+    ## concatenate datasets
+    combined_db, combined_folds = combine_datasets(datasets)
 
     folds = []
-    for number, selected in enumerate(folders):
-        datasets, encoder = unpack_dataset(dataset_path, selected)
+    for number, selected_folders in enumerate(combined_folds):
+        ## each fold consists of: [trn, val, tst] dictionaries
+        stages = create_fold_stages(combined_db, selected_folders, encoder)
         
         net = resnet50(num_classes=len(encoder)).to(device)
         load_model(net)
 
         optimizer = Adam(net.parameters(), lr=lr)
 
-        folds.append(Fold(net, optimizer, datasets, loader_args, number + 1))
+        folds.append(Fold(net, optimizer, stages, loader_args, number + 1))
 
-    decoder = {v: k for k, v in encoder.items()}
     criterion = nn.CrossEntropyLoss()
 
     table = PrettyTable()
@@ -218,6 +185,8 @@ def train():
             fold_results = []
 
             for loader in fold.loaders:
+                
+                loader_name = loader.dataset.name
 
                 if loader.dataset.training:
                     net.train()
@@ -241,17 +210,19 @@ def train():
 
                         progress.set_description(f'Epoch [{epoch + 1}/{epochs}]')
                         progress.set_postfix(loss=f'{mean_loss:.2f}')
-            
-                loader_name = loader.dataset.name
+                            
                 mae, gerr, cs5 = predict(net, loader, decoder, loader_name)
 
                 if loader_name == 'val' and mae < fold.lowest_val_mae:
+                    fold.lowest_val_mae = mae
                     fold.best_epoch = epoch + 1
                     checkpoint = {
                         'model_state_dict': net.state_dict(),
                         # 'optimizer_state_dict': optimizer.state_dict(),
                         'epoch': epoch + 1,
-                        'mae': mae, 'gerr': gerr, 'cs5': cs5
+                        'mae': mae, 'gerr': gerr, 'cs5': cs5,
+                        'encoder': encoder,
+                        'decoder': decoder,
                     }
                     torch.save(checkpoint, f'results/checkpoints/{fold.number}_checkpoint.pt')
 

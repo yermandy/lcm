@@ -2,12 +2,10 @@ import torch
 import torchvision.transforms as transforms
 from torch.utils.data import Dataset
 from PIL import Image, ImageFile
-from warnings import filterwarnings
+import numpy as np
 
-
+# Allow truncated images to be loaded
 ImageFile.LOAD_TRUNCATED_IMAGES = True
-filterwarnings("ignore", "(Possibly )?corrupt EXIF data", UserWarning)
-
 
 class ListDataset(Dataset):
     def __init__(self, args, name='', training=False):
@@ -55,7 +53,6 @@ class RandomDataset(Dataset):
     def __init__(self):
         super(RandomDataset, self).__init__()
         
-        import numpy as np
         self.values = np.random.rand(10, 3, 244, 244)
         self.labels = np.random.rand(10)
 
@@ -65,3 +62,34 @@ class RandomDataset(Dataset):
     def __getitem__(self, index):
         return self.values[index], self.labels[index]
 
+
+def combine_datasets(datasets_paths):
+    combined_db = None
+    combined_folders = []
+    for dataset_id, (path, folders) in enumerate(datasets_paths):
+        
+        db = np.genfromtxt(path, delimiter=',', skip_header=1, dtype=str)
+        db[:, 13] = np.char.add(f'{dataset_id}_', db[:, 13])
+
+        for folder in folders:        
+            for array in folder:
+                for idx, k in enumerate(array):
+                    array[idx] = f'{dataset_id}_{k}'
+
+        if combined_db is not None:
+            combined_db = np.concatenate((combined_db, db))
+        else:
+            combined_db = db
+
+        combined_folders.append(folders)
+
+    combined_folders = np.array(combined_folders, dtype=object)
+
+    combined_folds = []
+    for i in range(combined_folders.shape[1]):
+        fold = []
+        for j in range(combined_folders.shape[2]):
+            fold.append([*np.concatenate(combined_folders[:, i, j])])
+        combined_folds.append(fold)
+
+    return combined_db, combined_folds
