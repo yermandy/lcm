@@ -69,3 +69,18 @@ def plot_results(results: dict, fold_number):
     plot_mae(mae, fold_number)
     plot_gerr(gerr, fold_number)
     plot_cs5(cs5, fold_number)
+
+
+def plot_age_density(dicts: list, folds_n):
+    fig, ax = plt.subplots(1, 1)
+
+    for dict in dicts:
+        count = np.array(list(dict.values())) / folds_n
+        count = count / count.sum()
+        ax.plot(list(dict.keys()), count)
+
+    ax.set_xlabel('real age')
+    ax.set_ylabel('pdf')
+    path = 'results/plots'
+    makedirs(path, exist_ok=True)
+    plt.savefig(f'{path}/age_density.png', dpi=300, bbox_inches='tight')

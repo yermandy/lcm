@@ -4,43 +4,69 @@ from torch.utils.data import Dataset
 from PIL import Image, ImageFile
 import numpy as np
 from encoder_decoder import encode_labels
+import cv2
+from skimage.transform import SimilarityTransform
 
 # Allow truncated images to be loaded
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 class ListDataset(Dataset):
-    def __init__(self, args, name='', training=False):
+    def __init__(self, args, name='', training=False, alignment=True):
 
-        self.image_paths = args['image_paths']
+        self.paths = args['paths']
         self.boxes = args['boxes']
         self.labels = args['labels']
-        self.training = training
         self.name = name
+        self.alignment = alignment
+        self.training = training
 
-        if self.training:
-            self.transform = transforms.Compose([
-                transforms.Resize(140),
-                transforms.RandomCrop(128),
-                transforms.RandomHorizontalFlip(),
-                transforms.ToTensor(),
-            ])
+        if alignment:
+            self.landmarks = args['landmarks']
+            if training:
+                self.transform = transforms.Compose([
+                    transforms.RandomHorizontalFlip(),
+                    transforms.ToTensor(),
+                ])
+            else:
+                self.transform = transforms.Compose([
+                    transforms.ToTensor(),
+                ])
         else:
-            self.transform = transforms.Compose([
-                transforms.Resize(128),
-                transforms.CenterCrop(128),
-                transforms.ToTensor(),
-            ])
+            if training:
+                self.transform = transforms.Compose([
+                    transforms.Resize(140),
+                    transforms.RandomCrop(128),
+                    transforms.RandomHorizontalFlip(),
+                    transforms.ToTensor(),
+                ])
+            else:
+                self.transform = transforms.Compose([
+                    transforms.Resize(128),
+                    transforms.CenterCrop(128),
+                    transforms.ToTensor(),
+                ])
+
+        self.dest_landmarks = np.array([
+            [38.2946, 51.6963],
+            [73.5318, 51.5014],
+            [56.0252, 71.7366],
+            [41.5493, 92.3655],
+            [70.7299, 92.2041]
+        ])
 
 
     def __getitem__(self, index):
-        path = self.image_paths[index]
+        path = self.paths[index]
         image = Image.open(f'dataset/{path}').convert('RGB')
-        image = self.crop_face(image, self.boxes[index])
+        if self.alignment:
+            image = self.align_face(image, self.landmarks[index])
+        else:
+            image = self.crop_face(image, self.boxes[index])
         return self.transform(image), self.labels[index]
 
 
     def __len__(self):
-        return len(self.image_paths)
+        return len(self.paths)
 
 
     def crop_face(self, image, box, scale=0.25):
@@ -48,6 +74,15 @@ class ListDataset(Dataset):
         w = int((x2 - x1) * scale / 2)
         h = int((y2 - y1) * scale / 2)
         return image.crop((x1 - w, y1 - h, x2 + w, y2 + h))
+        
+
+    def align_face(self, image, landmarks):
+        landmarks = landmarks.reshape(5,2)
+        tform = SimilarityTransform()
+        tform.estimate(landmarks, self.dest_landmarks)
+        M = tform.params[0:2, :]
+        image = cv2.warpAffine(np.array(image), M, (112, 112))
+        return Image.fromarray(image)
 
 
 class RandomDataset(Dataset):
@@ -67,10 +102,13 @@ class RandomDataset(Dataset):
 def combine_datasets(datasets):
     combined_db = None
     combined_folders = []
-    for dataset_id, (path, folders) in enumerate(datasets):
+    for dataset_id, (path, landmarks_path, folders) in enumerate(datasets):
         
         db = np.genfromtxt(path, delimiter=',', skip_header=1, dtype=str)
+        landmarks = np.genfromtxt(landmarks_path, delimiter=',', dtype=int)[:, 1:]
         db[:, 13] = np.char.add(f'{dataset_id}_', db[:, 13])
+
+        db = np.hstack((db, landmarks))
 
         for folder in folders:        
             for array in folder:
@@ -95,6 +133,7 @@ def combine_datasets(datasets):
 
     return combined_db, combined_folds
 
+
 def create_fold_stages(db, selected_folders, encoder):
     ## filter dataset by age
     age = db[:, 10].astype(int)
@@ -112,6 +151,7 @@ def create_fold_stages(db, selected_folders, encoder):
     paths = db[:, 0]
     boxes = db[:, [1,2,5,6]].astype(int)
     age, gender = db[:, 10].astype(int), db[:, 11]
+    landmarks = db[:, 14:].astype(int)
 
     labels = encode_labels(age, gender, encoder)
 
@@ -119,9 +159,10 @@ def create_fold_stages(db, selected_folders, encoder):
     for idx in [trn_idx, val_idx, tst_idx]:
 
         stages.append({
-            'image_paths': paths[idx],
+            'paths': paths[idx],
             'boxes': boxes[idx],
             'labels': labels[idx],
+            'landmarks': landmarks[idx]
         })
 
     return stages

@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 
 from resnet import resnet18, resnet50
 from dataset.dataset import ListDataset, RandomDataset, combine_datasets, create_fold_stages
-from plot import plot_accuracy, plot_mae, plot_results
+from plot import plot_accuracy, plot_mae, plot_results, plot_age_density
 from os import makedirs
 from copy import deepcopy
 from fold import Fold
@@ -29,11 +29,11 @@ parser.add_argument('--cuda', default=0, type=int, help='Cuda device')
 parser.add_argument('--checkpoints', default='', type=str, help='Path to folder with checkpoints')
 args = parser.parse_args()
 
-makedirs('results/models', exist_ok=True)
+makedirs('results/checkpoints', exist_ok=True)
 
 
 
-def predict(net, loader, decoder, desc=''):
+def predict(net, loader, decoder, desc='', return_statistics=False):
     
     device = next(net.parameters()).device
     net.eval()
@@ -49,21 +49,23 @@ def predict(net, loader, decoder, desc=''):
     total, correct, abs_err_sum, gerr_sum, cs5_sum = [0] * 5
     progress = tqdm(loader)
 
+    age_true_stat, age_pred_stat = [], []
+
     with torch.no_grad():    
         for inputs, labels in progress:
             inputs = inputs.to(device)
             labels = labels.to(device)
 
             outputs = net(inputs)
-            predicted = torch.max(outputs, 1)[1]
-
-            correct += (predicted == labels).sum().item()
+           
             total += labels.shape[0]
 
             labels = labels.cpu().numpy()
-            age_true, gender_true = decode_labels(labels, decoder)
+            true_age_labels, true_gender_labels = decode_labels(labels, decoder)
 
             ## error using cross entropy predictions
+            # correct += (predicted == labels).sum().item()
+            # predicted = torch.max(outputs, 1)[1]
             # predicted = predicted.cpu().numpy()
             # age_pred, gender_pred = decode_labels(predicted, decoder)
             # abs_err_sum += np.abs(age_pred - age_true).sum()
@@ -71,7 +73,7 @@ def predict(net, loader, decoder, desc=''):
             ## p(a,g|x;Θ)
             predictions = F.softmax(outputs, dim=1)
 
-            for true_age, true_gender, pred in zip(age_true, gender_true, predictions):    
+            for true_age, true_gender, pred in zip(true_age_labels, true_gender_labels, predictions):    
 
                 pred = pred.reshape(2, -1)
 
@@ -91,12 +93,20 @@ def predict(net, loader, decoder, desc=''):
                 pred_gender = gender_labels[pred_idx]
                 gerr_sum += int(true_gender != pred_gender)
 
+                if return_statistics:
+                    age_true_stat.append(true_age)
+                    age_pred_stat.append(pred_age)
+
+
             mae = abs_err_sum / total
             gerr = gerr_sum / total
             cs5 = cs5_sum / total
             
             progress.set_description(f'{desc}')
             progress.set_postfix(gerr=f'{gerr:.2f}', cs5=f'{cs5:.2f}', mae=f'{mae:.2f}')
+
+    if return_statistics:
+        return mae, gerr, cs5, age_true_stat, age_pred_stat
 
     return mae, gerr, cs5
 
@@ -116,8 +126,6 @@ if __name__ == "__main__":
     ## concatenate datasets
     combined_db, combined_folds = combine_datasets(datasets)
 
-    checkpoints = [f for f in listdir(args.checkpoints)]
-
     folds = []
     for i, selected_folders in enumerate(combined_folds):
         ## each fold consists of: [trn, val, tst] dictionaries
@@ -125,23 +133,23 @@ if __name__ == "__main__":
         
         net = resnet50(num_classes=len(encoder)).to(device)
         
-        # print(f'{args.checkpoints}/{i + 1}_checkpoint.pt')
         net.load_checkpoint(f'{args.checkpoints}/{i + 1}_checkpoint.pt')
 
-        folds.append(Fold(net, None, stages, loader_args, i + 1))
+        folds.append(Fold(net, stages, loader_args, i + 1))
 
 
     table = PrettyTable()
     table.field_names = ['', 'mae', 'gerr', 'cs5']
 
     prediction_summary = []
+    ages_true_count = {age: 0 for age in range(1, 91)}
+    ages_pred_count = {age: 0 for age in range(1, 91)}
 
-    for i_th_fold, fold in enumerate(folds):
+    for fold in folds:
         fold : Fold = fold
 
         net = fold.net
-        optimizer = fold.optimizer
-        results = fold.results
+        # results = fold.results
 
         fold_results = []
 
@@ -149,19 +157,31 @@ if __name__ == "__main__":
             
             loader_name = loader.dataset.name
 
-            mae, gerr, cs5 = predict(net, loader, decoder, loader_name)
+            prediction_results = predict(net, loader, decoder, loader_name, return_statistics=True)
+            
+            mae, gerr, cs5, ages_true_list, ages_pred_list = prediction_results
 
-            results[loader_name]['mae'].append(mae)
-            results[loader_name]['gerr'].append(gerr)
-            results[loader_name]['cs5'].append(cs5)
+            # results[loader_name]['mae'].append(mae)
+            # results[loader_name]['gerr'].append(gerr)
+            # results[loader_name]['cs5'].append(cs5)
 
-            fold_results.append([mae, gerr, cs5]) 
+            fold_results.append([mae, gerr, cs5])
 
-        plot_results(results, fold.number)
+            def get_ages_count(ages_dict, ages_list):
+                ages_unique, ages_count = np.unique(ages_list, return_counts=True)
+                for unique, count in zip(ages_unique, ages_count):
+                    ages_dict[unique] += count
+
+            get_ages_count(ages_true_count, ages_true_list)
+            get_ages_count(ages_pred_count, ages_pred_list)
+    
+        # plot_results(results, fold.number)
 
         prediction_summary.append(fold_results)
     
         print()
+
+    plot_age_density([ages_true_count, ages_pred_count], len(folds))
 
     table.clear_rows()
     
@@ -174,4 +194,4 @@ if __name__ == "__main__":
     print(summary)
     with open('results/checkpoints/prediction_summary.txt', 'a') as file:
         file.write(summary)
-    
+

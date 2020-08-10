@@ -1,4 +1,3 @@
-
 # ---------------
 ## Model params
 # ---------------
@@ -11,6 +10,10 @@ lr = 0.001
 
 # ----------------
 ## Define folders 
+# 
+# Each row is a new fold
+# Each column [trn], [val], [tst] has a list of folders
+# 
 # ----------------
 
 agedb_folders = [
@@ -32,8 +35,9 @@ appa_real_folders = [
 ]
 
 
+## use tuple (path, folders) to add datasets
 datasets = [
-    ('resources/agedb.csv', agedb_folders),
-    ('resources/morph.csv', morph_folders),
-    ('resources/appa_real.csv', appa_real_folders)
+    ('resources/agedb.csv', 'resources/agedb_landmarks.csv', agedb_folders),
+    ('resources/morph.csv', 'resources/morph_landmarks.csv', morph_folders),
+    ('resources/appa_real.csv', 'resources/appa_real_landmarks.csv', appa_real_folders)
 ]

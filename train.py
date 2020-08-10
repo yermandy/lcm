@@ -57,7 +57,7 @@ def train():
 
         optimizer = Adam(net.parameters(), lr=lr)
 
-        folds.append(Fold(net, optimizer, stages, loader_args, number + 1))
+        folds.append(Fold(net, stages, loader_args, number + 1, optimizer))
 
     criterion = nn.CrossEntropyLoss()
 
