@@ -11,7 +11,7 @@ from skimage.transform import SimilarityTransform
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 class ListDataset(Dataset):
-    def __init__(self, args, name='', training=False, alignment=True):
+    def __init__(self, args, name='', training=False, alignment=False):
 
         self.paths = args['paths']
         self.boxes = args['boxes']

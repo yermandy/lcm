@@ -9,14 +9,13 @@ from torch.utils.data import DataLoader
 
 from resnet import resnet18, resnet50
 from dataset.dataset import ListDataset, RandomDataset, combine_datasets, create_fold_stages
-from plot import plot_accuracy, plot_mae, plot_results, plot_age_density
+from plot import plot_accuracy, plot_mae, plot_results, plot_age_density, plot_age_mae
 from os import makedirs
 from copy import deepcopy
 from fold import Fold
 from prettytable import PrettyTable
 from config import *
 from encoder_decoder import encode_labels, decode_labels, create_encoder_decoder
-from os import listdir
 from tqdm import tqdm
 
 
@@ -106,7 +105,7 @@ def predict(net, loader, decoder, desc='', return_statistics=False):
             progress.set_postfix(gerr=f'{gerr:.2f}', cs5=f'{cs5:.2f}', mae=f'{mae:.2f}')
 
     if return_statistics:
-        return mae, gerr, cs5, age_true_stat, age_pred_stat
+        return mae, gerr, cs5, np.array(age_true_stat), np.array(age_pred_stat)
 
     return mae, gerr, cs5
 
@@ -142,8 +141,14 @@ if __name__ == "__main__":
     table.field_names = ['', 'mae', 'gerr', 'cs5']
 
     prediction_summary = []
-    ages_true_count = {age: 0 for age in range(1, 91)}
-    ages_pred_count = {age: 0 for age in range(1, 91)}
+    d = {age: 0 for age in range(1, 91)}
+    d = {'trn': deepcopy(d), 'val': deepcopy(d), 'tst': deepcopy(d)}
+    ages_true_count = deepcopy(d)
+    ages_pred_count = deepcopy(d)
+    
+    d = {age: np.array([0.0, 0.0]) for age in range(1, 91)}
+    d = {'trn': deepcopy(d), 'val': deepcopy(d), 'tst': deepcopy(d)}
+    mae_through_ages = deepcopy(d)
 
     for fold in folds:
         fold : Fold = fold
@@ -172,9 +177,15 @@ if __name__ == "__main__":
                 for unique, count in zip(ages_unique, ages_count):
                     ages_dict[unique] += count
 
-            get_ages_count(ages_true_count, ages_true_list)
-            get_ages_count(ages_pred_count, ages_pred_list)
-    
+            get_ages_count(ages_true_count[loader_name], ages_true_list)
+            get_ages_count(ages_pred_count[loader_name], ages_pred_list)
+        
+            ## calculate mae for all ages
+            maes = np.abs(ages_true_list - ages_pred_list)
+
+            for true, mae in zip(ages_true_list, maes):
+                mae_through_ages[loader_name][true] += np.array([mae, 1])
+
         # plot_results(results, fold.number)
 
         prediction_summary.append(fold_results)
@@ -182,6 +193,8 @@ if __name__ == "__main__":
         print()
 
     plot_age_density([ages_true_count, ages_pred_count], len(folds))
+    
+    plot_age_mae(mae_through_ages, len(folds))
 
     table.clear_rows()
     

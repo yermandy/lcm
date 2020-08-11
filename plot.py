@@ -72,15 +72,51 @@ def plot_results(results: dict, fold_number):
 
 
 def plot_age_density(dicts: list, folds_n):
-    fig, ax = plt.subplots(1, 1)
-
-    for dict in dicts:
+    
+    def subplot(dict, ls='-', label=''):
         count = np.array(list(dict.values())) / folds_n
         count = count / count.sum()
-        ax.plot(list(dict.keys()), count)
+        ax.plot(list(dict.keys()), count, ls=ls, label=label)
 
+    fig, ax = plt.subplots(1, 1)
+
+    for dict, label, ls  in zip(dicts, ['true', 'pred'], ['-', '--']):
+        subplot(dict['trn'], ls=ls , label=f'trn {label}')
+        subplot(dict['val'], ls=ls , label=f'val {label}')
+        subplot(dict['tst'], ls=ls , label=f'tst {label}')
+
+    ax.legend()
     ax.set_xlabel('real age')
     ax.set_ylabel('pdf')
     path = 'results/plots'
     makedirs(path, exist_ok=True)
     plt.savefig(f'{path}/age_density.png', dpi=300, bbox_inches='tight')
+
+
+def plot_age_mae(dict, folds_n):
+
+    def subplot(subdict, label):    
+        
+        maes_counts = np.array(list(subdict.values()))
+        maes = maes_counts[:, 0] / (maes_counts[:, 1] + 1e-12)
+
+        ages = np.array(list(subdict.keys()))
+
+        idx = np.argsort(ages)
+        ages = ages[idx]
+        maes = maes[idx]
+
+        ax.plot(ages, maes, label=label)
+
+    fig, ax = plt.subplots(1, 1)
+
+    subplot(dict['trn'], 'trn')
+    subplot(dict['val'], 'val')
+    subplot(dict['tst'], 'tst')
+
+    ax.legend()
+    ax.set_xlabel('real age')
+    ax.set_ylabel('mae')
+    path = 'results/plots'
+    makedirs(path, exist_ok=True)
+    plt.savefig(f'{path}/age_mae.png', dpi=300, bbox_inches='tight')
