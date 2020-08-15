@@ -32,7 +32,7 @@ makedirs('results/checkpoints', exist_ok=True)
 
 
 
-def predict(net, loader, decoder, desc='', return_statistics=False):
+def predict(net : resnet50, loader, decoder, desc='', return_statistics=False):
     
     device = next(net.parameters()).device
     net.eval()
@@ -51,7 +51,7 @@ def predict(net, loader, decoder, desc='', return_statistics=False):
     age_true_stat, age_pred_stat = [], []
 
     with torch.no_grad():    
-        for inputs, labels in progress:
+        for inputs, labels, d in progress:
             inputs = inputs.to(device)
             labels = labels.to(device)
 
@@ -69,9 +69,14 @@ def predict(net, loader, decoder, desc='', return_statistics=False):
             # age_pred, gender_pred = decode_labels(predicted, decoder)
             # abs_err_sum += np.abs(age_pred - age_true).sum()
 
-            ## p(a,g|x;Θ)
-            predictions = F.softmax(outputs, dim=1)
-
+            if net.model_name == 'lcm':
+                outputs = net.mbl(outputs, d)
+                ## p(â,ĝ|x;Θ)
+                predictions = net.lcm(outputs, d)
+            else:
+                ## p(a,g|x;Θ)
+                predictions = F.softmax(outputs, dim=1)
+            
             for true_age, true_gender, pred in zip(true_age_labels, true_gender_labels, predictions):    
 
                 pred = pred.reshape(2, -1)

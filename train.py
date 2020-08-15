@@ -18,6 +18,7 @@ from prettytable import PrettyTable
 from config import *
 from encoder_decoder import encode_labels, decode_labels, create_encoder_decoder
 from predict import predict
+from layers import LCM, MultiBiasedLinear
 
 
 parser = argparse.ArgumentParser(description='Training')
@@ -25,6 +26,7 @@ parser.add_argument('--batch_size', default=16, type=int, help='Batch size')
 parser.add_argument('--workers', default=8, type=int, help='Workers number')
 parser.add_argument('--cuda', default=0, type=int, help='Cuda device')
 parser.add_argument('--checkpoint', default='', type=str, help='Checkpoint path')
+parser.add_argument('--model', default='lcm', type=str, help='Model name')
 args = parser.parse_args()
 
 makedirs('results/checkpoints', exist_ok=True)
@@ -44,7 +46,7 @@ def train():
     encoder, decoder = create_encoder_decoder()
 
     ## concatenate datasets
-    combined_db, combined_folds = combine_datasets(datasets)
+    combined_db, combined_folds, datasets_ages = combine_datasets(datasets)
 
     folds = []
     for number, selected_folders in enumerate(combined_folds):
@@ -52,6 +54,13 @@ def train():
         stages = create_fold_stages(combined_db, selected_folders, encoder)
         
         net = resnet50(num_classes=len(encoder)).to(device)
+        net.model_name = args.model
+
+        if net.model_name == 'lcm':
+            net.mbl = MultiBiasedLinear(net.fc.in_features, net.fc.out_features, len(datasets)).to(device)
+            net.fc = nn.Sequential()
+            net.lcm = LCM(len(datasets), datasets_ages, np.arange(1, 91)).to(device)
+
         if args.checkpoint:
             net.load_checkpoint(args.checkpoint)
 
@@ -72,7 +81,7 @@ def train():
         for i_th_fold, fold in enumerate(folds):
             fold : Fold = fold
 
-            net = fold.net
+            net : resnet50 = fold.net
             optimizer = fold.optimizer
             results = fold.results
 
@@ -86,15 +95,27 @@ def train():
                     net.train()
                     mean_loss = 0
                     progress = tqdm(loader, position=0)
-                    for i, (inputs, labels) in enumerate(progress):
+                    for i, (inputs, labels, d) in enumerate(progress):
                         
                         optimizer.zero_grad()
 
                         inputs = inputs.to(device)
-                        labels = labels.to(device)
-                        outputs = net(inputs)    
+                        outputs = net(inputs)
+                        
+                        if net.model_name == 'lcm':
+                            labels = labels.cpu().numpy()
+                            outputs = net.mbl(outputs, d)
+                            
+                            ## p(â,ĝ|x,d)
+                            outputs = net.lcm(outputs, d)
+                            outputs = outputs[range(len(labels)), labels]
 
-                        loss = criterion(outputs, labels)
+                            ## -mean(log(p(â,ĝ|x,d)))
+                            loss = outputs.clamp(1e-32, 1).log().mean().neg()
+                        else:
+                            labels = labels.to(device)
+                            loss = criterion(outputs, labels)
+
                         loss.backward()
 
                         optimizer.step()

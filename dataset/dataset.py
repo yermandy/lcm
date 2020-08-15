@@ -16,6 +16,7 @@ class ListDataset(Dataset):
         self.paths = args['paths']
         self.boxes = args['boxes']
         self.labels = args['labels']
+        self.datasets = args['datasets']
         self.name = name
         self.alignment = alignment
         self.training = training
@@ -62,7 +63,7 @@ class ListDataset(Dataset):
             image = self.align_face(image, self.landmarks[index])
         else:
             image = self.crop_face(image, self.boxes[index])
-        return self.transform(image), self.labels[index]
+        return self.transform(image), self.labels[index], self.datasets[index]
 
 
     def __len__(self):
@@ -102,11 +103,17 @@ class RandomDataset(Dataset):
 def combine_datasets(datasets):
     combined_db = None
     combined_folders = []
+    ages = []
     for dataset_id, (path, landmarks_path, folders) in enumerate(datasets):
         
         db = np.genfromtxt(path, delimiter=',', skip_header=1, dtype=str)
         landmarks = np.genfromtxt(landmarks_path, delimiter=',', dtype=int)[:, 1:]
         db[:, 13] = np.char.add(f'{dataset_id}_', db[:, 13])
+
+        unique_ages = np.unique(db[:, 10].astype(int))
+        age_filter = np.flatnonzero((unique_ages >= 1) & (unique_ages <= 90))
+        unique_ages = unique_ages[age_filter]
+        ages.append(unique_ages)
 
         db = np.hstack((db, landmarks))
 
@@ -131,7 +138,7 @@ def combine_datasets(datasets):
             fold.append([*np.concatenate(combined_folders[:, i, j])])
         combined_folds.append(fold)
 
-    return combined_db, combined_folds
+    return combined_db, combined_folds, ages
 
 
 def create_fold_stages(db, selected_folders, encoder):
@@ -142,6 +149,8 @@ def create_fold_stages(db, selected_folders, encoder):
 
     ## split trn, val and tst
     fold = db[:, 13]
+    datasets = np.array([int(dataset.split('_')[0]) for dataset in fold])
+    
     get_indices = lambda x_fold: np.flatnonzero(np.isin(fold, x_fold) == True)
 
     trn_idx = get_indices(selected_folders[0])
@@ -151,7 +160,7 @@ def create_fold_stages(db, selected_folders, encoder):
     paths = db[:, 0]
     boxes = db[:, [1,2,5,6]].astype(int)
     age, gender = db[:, 10].astype(int), db[:, 11]
-    landmarks = db[:, 14:].astype(int)
+    landmarks = db[:, 14:24].astype(int)
 
     labels = encode_labels(age, gender, encoder)
 
@@ -162,7 +171,8 @@ def create_fold_stages(db, selected_folders, encoder):
             'paths': paths[idx],
             'boxes': boxes[idx],
             'labels': labels[idx],
-            'landmarks': landmarks[idx]
+            'landmarks': landmarks[idx],
+            'datasets': datasets[idx]
         })
 
     return stages
