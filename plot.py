@@ -73,17 +73,20 @@ def plot_results(results: dict, fold_number):
 
 def plot_age_density(dicts: list, folds_n):
     
-    def subplot(dict, ls='-', label=''):
+    def subplot(dict, ls='-', label='', c=''):
         count = np.array(list(dict.values())) / folds_n
         count = count / count.sum()
-        ax.plot(list(dict.keys()), count, ls=ls, label=label)
+        ax.plot(list(dict.keys()), count, ls=ls, label=label, c=c)
 
     fig, ax = plt.subplots(1, 1)
 
-    for dict, label, ls  in zip(dicts, ['true', 'pred'], ['-', '--']):
-        subplot(dict['trn'], ls=ls , label=f'trn {label}')
-        subplot(dict['val'], ls=ls , label=f'val {label}')
-        subplot(dict['tst'], ls=ls , label=f'tst {label}')
+    # ['-', '--', ':']
+    for dict, label, ls, c in zip(dicts, ['true', 'p(â)', 'p(a)'], ['-', '-', '-'], ['tab:blue', 'tab:orange', 'tab:green']):
+        # subplot(dict['trn'], ls=ls, label=f'trn {label}', c='tab:blue')
+        # subplot(dict['val'], ls=ls, label=f'val {label}', c='tab:orange')
+        # subplot(dict['tst'], ls=ls, label=f'tst {label}', c='tab:green')
+        
+        subplot(dict['tst'], ls=ls, label=f'tst {label}', c=c)
 
     ax.legend()
     ax.set_xlabel('real age')

@@ -65,8 +65,9 @@ def train():
             net.load_checkpoint(args.checkpoint)
 
         optimizer = Adam(net.parameters(), lr=lr)
-
-        folds.append(Fold(net, stages, loader_args, number + 1, optimizer))
+        fold = Fold(net, stages, loader_args, number + 1, optimizer)
+        
+        folds.append(fold)
 
     criterion = nn.CrossEntropyLoss()
 
