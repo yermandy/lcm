@@ -6,3 +6,6 @@ dataset/*
 !dataset/dataset.py
 
 resources/*
+results/*
+
+tempCodeRunnerFile.py
