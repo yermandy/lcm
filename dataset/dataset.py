@@ -100,14 +100,13 @@ class RandomDataset(Dataset):
         return self.values[index], self.labels[index]
 
 
-def combine_datasets(datasets):
+def combine_datasets(datasets, dataset_n=None):
     combined_db = None
     combined_folders = []
     ages = []
     for dataset_id, (path, landmarks_path, folders) in enumerate(datasets):
         
         db = np.genfromtxt(path, delimiter=',', skip_header=1, dtype=str)
-        landmarks = np.genfromtxt(landmarks_path, delimiter=',', dtype=int)[:, 1:]
         db[:, 13] = np.char.add(f'{dataset_id}_', db[:, 13])
 
         unique_ages = np.unique(db[:, 10].astype(int))
@@ -115,7 +114,12 @@ def combine_datasets(datasets):
         unique_ages = unique_ages[age_filter]
         ages.append(unique_ages)
 
-        db = np.hstack((db, landmarks))
+        if dataset_n is not None and dataset_id != dataset_n:
+            continue
+
+        if landmarks_path != '':
+            landmarks = np.genfromtxt(landmarks_path, delimiter=',', dtype=int)[:, 1:]
+            db = np.hstack((db, landmarks))
 
         for folder in folders:        
             for array in folder:
@@ -160,7 +164,7 @@ def create_fold_stages(db, selected_folders, encoder):
     paths = db[:, 0]
     boxes = db[:, [1,2,5,6]].astype(int)
     age, gender = db[:, 10].astype(int), db[:, 11]
-    landmarks = db[:, 14:24].astype(int)
+    # landmarks = db[:, 14:24].astype(int)
 
     labels = encode_labels(age, gender, encoder)
 
@@ -171,7 +175,7 @@ def create_fold_stages(db, selected_folders, encoder):
             'paths': paths[idx],
             'boxes': boxes[idx],
             'labels': labels[idx],
-            'landmarks': landmarks[idx],
+            # 'landmarks': landmarks[idx],
             'datasets': datasets[idx]
         })
 
