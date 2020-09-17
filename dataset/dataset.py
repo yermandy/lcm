@@ -3,15 +3,20 @@ import torchvision.transforms as transforms
 from torch.utils.data import Dataset
 from PIL import Image, ImageFile
 import numpy as np
-from encoder_decoder import encode_labels
+from encoder_decoder import EncoderDecoder
 import cv2
 from skimage.transform import SimilarityTransform
+from copy import deepcopy
 
 # Allow truncated images to be loaded
 ImageFile.LOAD_TRUNCATED_IMAGES = True
+Image.warnings.filterwarnings("ignore", "(Possibly )?corrupt EXIF data", UserWarning)
+# Allow large image files
+Image.MAX_IMAGE_PIXELS = None
+Image.warnings.simplefilter('ignore', Image.DecompressionBombWarning)
 
 class ListDataset(Dataset):
-    def __init__(self, args, name='', training=False, alignment=False):
+    def __init__(self, args, name='', training=False, alignment=False, return_index=False):
 
         self.paths = args['paths']
         self.boxes = args['boxes']
@@ -20,6 +25,7 @@ class ListDataset(Dataset):
         self.name = name
         self.alignment = alignment
         self.training = training
+        self.return_index = return_index
 
         if alignment:
             self.landmarks = args['landmarks']
@@ -63,6 +69,8 @@ class ListDataset(Dataset):
             image = self.align_face(image, self.landmarks[index])
         else:
             image = self.crop_face(image, self.boxes[index])
+        if self.return_index:
+            return self.transform(image), self.labels[index], self.datasets[index], index
         return self.transform(image), self.labels[index], self.datasets[index]
 
 
@@ -106,8 +114,15 @@ def combine_datasets(datasets, dataset_n=None):
     ages = []
     for dataset_id, (path, landmarks_path, folders) in enumerate(datasets):
         
+        print(f'{dataset_id}: {path}')
+
+        folders = deepcopy(folders)
+
         db = np.genfromtxt(path, delimiter=',', skip_header=1, dtype=str)
         db[:, 13] = np.char.add(f'{dataset_id}_', db[:, 13])
+
+        gender_filter = np.flatnonzero((db[:, 11] == 'F') | (db[:, 11] == "M"))
+        db = db[gender_filter]
 
         unique_ages = np.unique(db[:, 10].astype(int))
         age_filter = np.flatnonzero((unique_ages >= 1) & (unique_ages <= 90))
@@ -145,7 +160,7 @@ def combine_datasets(datasets, dataset_n=None):
     return combined_db, combined_folds, ages
 
 
-def create_fold_stages(db, selected_folders, encoder):
+def create_fold_stages(db, selected_folders):
     ## filter dataset by age
     age = db[:, 10].astype(int)
     age_filter = np.flatnonzero((age >= 1) & (age <= 90))
@@ -166,7 +181,7 @@ def create_fold_stages(db, selected_folders, encoder):
     age, gender = db[:, 10].astype(int), db[:, 11]
     # landmarks = db[:, 14:24].astype(int)
 
-    labels = encode_labels(age, gender, encoder)
+    labels = EncoderDecoder().encode_labels(age, gender)
 
     stages = []
     for idx in [trn_idx, val_idx, tst_idx]:

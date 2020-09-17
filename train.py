@@ -1,24 +1,22 @@
 import numpy as np
-from tqdm import tqdm
 import argparse
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim import Adam, SGD
-from torch.utils.data import DataLoader
 
+from tqdm import tqdm
 from resnet import resnet18, resnet50
-from dataset.dataset import ListDataset, RandomDataset, combine_datasets, create_fold_stages
+from resnet_lcm import resnet50_lcm
+from dataset.dataset import combine_datasets, create_fold_stages
 from plot import plot_accuracy, plot_mae, plot_results
 from os import makedirs
-from copy import deepcopy
-from fold import Fold
+from fold import create_folds
 from prettytable import PrettyTable
 from config import *
-from encoder_decoder import encode_labels, decode_labels, create_encoder_decoder
 from predict import predict
-from layers import LCM, MultiBiasedLinear
+from encoder_decoder import EncoderDecoder
 
 
 parser = argparse.ArgumentParser(description='Training')
@@ -27,6 +25,7 @@ parser.add_argument('--workers', default=8, type=int, help='Workers number')
 parser.add_argument('--cuda', default=0, type=int, help='Cuda device')
 parser.add_argument('--checkpoint', default='', type=str, help='Checkpoint path')
 parser.add_argument('--model', default='lcm', type=str, help='Model name')
+parser.add_argument('--dataset_n', default=None, type=int, help='Dataset number')
 args = parser.parse_args()
 
 makedirs('results/checkpoints', exist_ok=True)
@@ -37,37 +36,10 @@ def train():
     device = torch.device(f'cuda:{args.cuda}' if torch.cuda.is_available() else 'cpu')
     print(f'Running model on: {device}\n')
 
-    loader_args = {
-        'num_workers': args.workers,
-        'batch_size': args.batch_size,
-        'shuffle': True
-    }
+    folds = create_folds(datasets, args, device)
 
-    encoder, decoder = create_encoder_decoder()
-
-    ## concatenate datasets
-    combined_db, combined_folds, datasets_ages = combine_datasets(datasets)
-
-    folds = []
-    for number, selected_folders in enumerate(combined_folds):
-        ## each fold consists of: [trn, val, tst] dictionaries
-        stages = create_fold_stages(combined_db, selected_folders, encoder)
-        
-        net = resnet50(num_classes=len(encoder)).to(device)
-        net.model_name = args.model
-
-        if net.model_name == 'lcm':
-            net.mbl = MultiBiasedLinear(net.fc.in_features, net.fc.out_features, len(datasets)).to(device)
-            net.fc = nn.Sequential()
-            net.lcm = LCM(len(datasets), datasets_ages, np.arange(1, 91)).to(device)
-
-        if args.checkpoint:
-            net.load_checkpoint(args.checkpoint)
-
-        optimizer = Adam(net.parameters(), lr=lr)
-        fold = Fold(net, stages, loader_args, number + 1, optimizer)
-        
-        folds.append(fold)
+    for fold in folds:
+        fold.set_optimizer(Adam, lr=lr)
 
     criterion = nn.CrossEntropyLoss()
 
@@ -80,8 +52,6 @@ def train():
 
         ## k-Fold Cross-Validation
         for i_th_fold, fold in enumerate(folds):
-            fold : Fold = fold
-
             net : resnet50 = fold.net
             optimizer = fold.optimizer
             results = fold.results
@@ -101,19 +71,18 @@ def train():
                         optimizer.zero_grad()
 
                         inputs = inputs.to(device)
-                        outputs = net(inputs)
                         
                         if net.model_name == 'lcm':
+                            outputs = net(inputs, d)
                             labels = labels.cpu().numpy()
-                            outputs = net.mbl(outputs, d)
-                            
+
                             ## p(â,ĝ|x,d)
-                            outputs = net.lcm(outputs, d)
                             outputs = outputs[range(len(labels)), labels]
 
                             ## -mean(log(p(â,ĝ|x,d)))
                             loss = outputs.clamp(1e-32, 1).log().mean().neg()
                         else:
+                            outputs = net(inputs)
                             labels = labels.to(device)
                             loss = criterion(outputs, labels)
 
@@ -127,7 +96,7 @@ def train():
                         progress.set_description(f'Epoch [{epoch + 1}/{epochs}]')
                         progress.set_postfix(loss=f'{mean_loss:.2f}')
                             
-                mae, gerr, cs5 = predict(net, loader, decoder, loader_name)
+                mae, gerr, cs5 = predict(net, loader, loader_name)
 
                 if loader_name == 'val' and mae < fold.lowest_val_mae:
                     fold.lowest_val_mae = mae
@@ -137,8 +106,7 @@ def train():
                         # 'optimizer_state_dict': optimizer.state_dict(),
                         'epoch': epoch + 1,
                         'mae': mae, 'gerr': gerr, 'cs5': cs5,
-                        'encoder': encoder,
-                        'decoder': decoder,
+                        'EncoderDecoder': EncoderDecoder()
                     }
                     torch.save(checkpoint, f'results/checkpoints/{fold.number}_checkpoint.pt')
 

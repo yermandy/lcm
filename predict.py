@@ -5,20 +5,18 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim import Adam, SGD
-from torch.utils.data import DataLoader
 
 from resnet import resnet18, resnet50
-from dataset.dataset import ListDataset, RandomDataset, combine_datasets, create_fold_stages
+from resnet_lcm import resnet50_lcm
+from dataset.dataset import combine_datasets, create_fold_stages
 from plot import plot_accuracy, plot_mae, plot_results, plot_age_density, plot_age_mae
 from os import makedirs
 from copy import deepcopy
-from fold import Fold
+from fold import create_folds
 from prettytable import PrettyTable
 from config import *
-from encoder_decoder import encode_labels, decode_labels, create_encoder_decoder
+from encoder_decoder import EncoderDecoder
 from tqdm import tqdm
-from layers import LCM, MultiBiasedLinear
-
 
 
 parser = argparse.ArgumentParser(description='Prediction')
@@ -34,7 +32,7 @@ makedirs('results/checkpoints', exist_ok=True)
 
 
 
-def predict(net : resnet50, loader, decoder, desc='', return_statistics=False):
+def predict(net : resnet50, loader, desc='', return_statistics=False):
     
     device = next(net.parameters()).device
     net.eval()
@@ -59,13 +57,12 @@ def predict(net : resnet50, loader, decoder, desc='', return_statistics=False):
         for inputs, labels, d in progress:
             inputs = inputs.to(device)
             labels = labels.to(device)
-
-            outputs = net(inputs)
            
             total += labels.shape[0]
 
             labels = labels.cpu().numpy()
-            true_age_labels, true_gender_labels = decode_labels(labels, decoder)
+            
+            true_age_labels, true_gender_labels = EncoderDecoder().decode_labels(labels)
 
             ## error using cross entropy predictions
             # correct += (predicted == labels).sum().item()
@@ -74,19 +71,24 @@ def predict(net : resnet50, loader, decoder, desc='', return_statistics=False):
             # age_pred, gender_pred = decode_labels(predicted, decoder)
             # abs_err_sum += np.abs(age_pred - age_true).sum()
 
+
             if net.model_name == 'lcm':
-                # d_bias = d
-                # if args.dataset_n is not None:
-                #     d[:] = 2
-                outputs = net.mbl(outputs, d)
-                ## p(â,ĝ|x;Θ)
-                
-                predictions, PagIx = net.lcm(outputs, d, return_PagIx=True)
+                preds, PagIx = net(inputs, d, return_PagIx=True)
+
+                loop = zip(true_age_labels, true_gender_labels, preds, PagIx)
             else:
+                outputs = net(inputs)
                 ## p(a,g|x;Θ)
-                predictions = F.softmax(outputs, dim=1)
+                preds = F.softmax(outputs, dim=1)
+
+                loop = zip(true_age_labels, true_gender_labels, preds)
             
-            for true_age, true_gender, pred, PagIxi in zip(true_age_labels, true_gender_labels, predictions, PagIx):
+            for loop_item in loop:
+
+                if net.model_name == 'lcm':
+                    true_age, true_gender, pred, PagIxi = loop_item
+                else:
+                    true_age, true_gender, pred = loop_item
 
                 pred = pred.reshape(2, -1)
 
@@ -110,8 +112,10 @@ def predict(net : resnet50, loader, decoder, desc='', return_statistics=False):
                     age_true_stat.append(true_age)
                     age_pred_stat.append(pred_age)
                     ages_distributions.append(PaIx.cpu().numpy())
-                    PagIxi = PagIxi.reshape(2, -1).sum(0)
-                    PagIx_stat.append(PagIxi.cpu().numpy())
+
+                    if net.model_name == 'lcm':
+                        PagIxi = PagIxi.reshape(2, -1).sum(0)
+                        PagIx_stat.append(PagIxi.cpu().numpy())
 
             mae = abs_err_sum / total
             gerr = gerr_sum / total
@@ -122,8 +126,11 @@ def predict(net : resnet50, loader, decoder, desc='', return_statistics=False):
 
     if return_statistics:
         age_distribution = np.mean(ages_distributions, axis=0)
-        PagIx_stat = np.mean(PagIx_stat, axis=0)
-        return mae, gerr, cs5, np.array(age_true_stat), np.array(age_pred_stat), age_distribution, PagIx_stat
+        if net.model_name == 'lcm':
+            PagIx_stat = np.mean(PagIx_stat, axis=0)
+            return mae, gerr, cs5, np.array(age_true_stat), np.array(age_pred_stat), age_distribution, PagIx_stat
+        else:
+            return mae, gerr, cs5, np.array(age_true_stat), np.array(age_pred_stat), age_distribution
 
     return mae, gerr, cs5
 
@@ -133,33 +140,12 @@ if __name__ == "__main__":
     device = torch.device(f'cuda:{args.cuda}' if torch.cuda.is_available() else 'cpu')
     print(f'Running model on: {device}\n')
 
-    loader_args = {
-        'num_workers': args.workers,
-        'batch_size': args.batch_size
-    }
+    encoder_decoder = EncoderDecoder()
 
-    encoder, decoder = create_encoder_decoder()
+    folds = create_folds(datasets, args, device)
 
-    ## concatenate datasets
-    combined_db, combined_folds, datasets_ages = combine_datasets(datasets, args.dataset_n)
-
-    folds = []
-    for i, selected_folders in enumerate(combined_folds):
-        ## each fold consists of: [trn, val, tst] dictionaries
-        stages = create_fold_stages(combined_db, selected_folders, encoder)
-        
-        net = resnet50(num_classes=len(encoder)).to(device)
-        net.model_name = args.model
-
-        if net.model_name == 'lcm':
-            net.mbl = MultiBiasedLinear(net.fc.in_features, net.fc.out_features, len(datasets)).to(device)
-            net.fc = nn.Sequential()
-            net.lcm = LCM(len(datasets), datasets_ages, np.arange(1, 91)).to(device)
-        
-        net.load_checkpoint(f'{args.checkpoints}/{i + 1}_checkpoint.pt')
-
-        folds.append(Fold(net, stages, loader_args, i + 1))
-
+    for i, fold in enumerate(folds):
+        fold.net.load_checkpoint(f'{args.checkpoints}/{i + 1}_checkpoint.pt')
 
     table = PrettyTable()
     table.field_names = ['', 'mae', 'gerr', 'cs5']
@@ -179,8 +165,6 @@ if __name__ == "__main__":
     PagIx_dict = {'trn': deepcopy(ages), 'val': deepcopy(ages), 'tst': deepcopy(ages)}
 
     for fold in folds:
-        fold : Fold = fold
-
         net = fold.net
         # results = fold.results
 
@@ -190,14 +174,17 @@ if __name__ == "__main__":
             
             loader_name = loader.dataset.name
 
-            prediction_results = predict(net, loader, decoder, loader_name, return_statistics=True)
+            prediction_results = predict(net, loader, loader_name, return_statistics=True)
             
-            mae, gerr, cs5, ages_true_list, ages_pred_list, age_distribution, PagIx_stat = prediction_results
+            if net.model_name == 'lcm':
+                mae, gerr, cs5, ages_true_list, ages_pred_list, age_distribution, PagIx_stat = prediction_results
+                PagIx_dict[loader_name] += PagIx_stat
+            else:
+                mae, gerr, cs5, ages_true_list, ages_pred_list, age_distribution = prediction_results
 
             fold_results.append([mae, gerr, cs5])
             
             age_distribution_dict[loader_name] += age_distribution
-            PagIx_dict[loader_name] += PagIx_stat
 
             def get_ages_count(ages_dict, ages_list):
                 ages_unique, ages_count = np.unique(ages_list, return_counts=True)
@@ -220,13 +207,20 @@ if __name__ == "__main__":
     for k, v in age_distribution_dict.items():
         age_distribution_dict[k] = {age: c for age, c in zip(range(1, 91), v)}
 
-    for k, v in PagIx_dict.items():
-        PagIx_dict[k] = {age: c for age, c in zip(range(1, 91), v)}
-
-    plot_age_density([ages_true_count, age_distribution_dict, PagIx_dict], len(folds))
+    distributions = [ages_true_count, age_distribution_dict]
     
+    if net.model_name == 'lcm':
+        for k, v in PagIx_dict.items():
+            PagIx_dict[k] = {age: c for age, c in zip(range(1, 91), v)}
+        
+        distributions.append(PagIx_dict)
+
+   ## plots
+
+    plot_age_density(distributions, len(folds))
     plot_age_mae(mae_through_ages, len(folds))
 
+    ## table
     table.clear_rows()
     
     mean = np.mean(prediction_summary, axis=0)
