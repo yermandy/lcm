@@ -1,3 +1,6 @@
+import sys
+sys.path.append('/'.join(sys.path[0].split('/')[:-1]))
+
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -8,7 +11,9 @@ from encoder_decoder import EncoderDecoder
 from dataset.dataset import ListDataset
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from resnet import resnet50
+from model.resnet import resnet50, resnet18
+from model.senet import se_resnet18
+
 
 ages = np.arange(1, 91)
 
@@ -32,29 +37,8 @@ def create_model(u, v, z):
     return PaIag_PgIag
 
 
-u1 = torch.Tensor([[0, 1.25, .007], [0, 1, .005]])
-v1 = torch.Tensor([[3, .1], [.1, .1]])
-g_poly = np.array([-1.1, -0.155, 0.0017])
-z1 = torch.Tensor([g_poly, -g_poly])
-
-
-u2 = torch.Tensor([[0, 1, .001], [0, 0.75, .001]])
-v2 = torch.Tensor([[1, .25], [1, .1]])
-g_poly = np.array([0, -0.155, 0.0017])
-z2 = torch.Tensor([g_poly, -g_poly])
-
-
-u3 = torch.Tensor([[0, 1, -.003], [0, 1, .005]])
-v3 = torch.Tensor([[1, .25], [5, 0.25]])
-g_poly = np.array([-1, -0.1, 0.0012])
-z3 = torch.Tensor([g_poly, -g_poly])
-
-
-
 def vis_mu(us, axes):
     
-    # fig, axes = plt.subplots(1, len(us), figsize=(4 * len(us), 3 * 1))
-
     for u, ax in zip(us, axes):
 
         mu = u @ poly_deg_2
@@ -68,8 +52,6 @@ def vis_mu(us, axes):
 
 def vis_sigma(vs, axes):
     
-    # fig, axes = plt.subplots(1, len(vs), figsize=(4 * len(vs), 3 * 1))
-
     for v, ax in zip(vs, axes):
 
         sigma = v @ poly_deg_1
@@ -81,8 +63,6 @@ def vis_sigma(vs, axes):
 
 
 def vis_gamma(zs, axes):
-
-    # fig, axes = plt.subplots(1, len(zs), figsize=(4 * len(zs), 3 * 1))
 
     for z, ax in zip(zs, axes):
 
@@ -143,22 +123,43 @@ def init_loader(dataset_path):
     return loader, db
 
 
+
 def init_model(checkpoint):
-    net = resnet50(num_classes=len(EncoderDecoder()))
+    net = resnet18(num_classes=len(EncoderDecoder()))
     net.load_checkpoint(checkpoint)
     return net
 
 
-# vis_params([u1, u2, u3], [v1, v2, v3], [z1, z2, z3])
+u1 = torch.Tensor([[0, 1.9, -0.01], [0, 0.1, 0.01]])
+v1 = torch.Tensor([[1, .3], [1, 0.2]])
+g_poly = np.array([-3, 0.02, 0.0001])
+z1 = torch.Tensor([g_poly, -g_poly])
+
+
+u2 = torch.Tensor([[1, 0.5, 0.01], [-1, 1.5, -0.01]])
+v2 = torch.Tensor([[1, 0.75], [1, .1]])
+g_poly = np.array([-0.7, -0.04, -0.0001])
+z2 = torch.Tensor([g_poly, -g_poly])
+
+
+u3 = torch.Tensor([[0, 1, 0.005], [0, 1, -0.005]])
+v3 = torch.Tensor([[1, 0.01], [1, 0.1]])
+g_poly = np.array([-1, -0.02, 0.0002])
+z3 = torch.Tensor([g_poly, -g_poly])
+
+
+vis_params([u1, u2, u3], [v1, v2, v3], [z1, z2, z3])
 
 datasets = [1, 2, 3]
 
+add_true = False
 bias_masks = [np.arange(45), np.arange(30, 61), np.arange(44, 90)]
+
 datasets_params = [[u1, v1, z1], [u2, v2, z2], [u3, v3, z3]]
 
-device = torch.device(f'cuda:0' if torch.cuda.is_available() else 'cpu')
 
-checkpoint_path = 'results/checkpoints_ResNet_IMDB/1_checkpoint.pt'
+device = torch.device(f'cuda:0' if torch.cuda.is_available() else 'cpu')
+checkpoint_path = 'results/checkpoints_senet_imdb/1_checkpoint.pt'
 model = init_model(checkpoint_path).to(device)
 
 for dataset, bias_mask, params in zip(datasets, bias_masks, datasets_params):
@@ -167,10 +168,12 @@ for dataset, bias_mask, params in zip(datasets, bias_masks, datasets_params):
     PaIag_PgIag = create_model(u, v, z).to(device)
 
     ## bias
-    bias = np.ones(90)
-    bias[bias_mask] = 0
-    bias = np.array([*bias, *bias])
-    bias = torch.Tensor(bias).to(device)
+
+    if add_true:
+        bias = np.ones(90)
+        bias[bias_mask] = 0
+        bias = np.array([*bias, *bias])
+        bias = torch.Tensor(bias).to(device)
 
     dataset_path = f'resources/imdb_synth/imdb_{dataset}.csv'
     loader, db = init_loader(dataset_path)
@@ -188,7 +191,10 @@ for dataset, bias_mask, params in zip(datasets, bias_masks, datasets_params):
         outputs = model(inputs)
         
         ## p(a,g|x;Θ)
-        PagIx = F.softmax(outputs + bias, dim=1)
+        if add_true:
+            PagIx = F.softmax(outputs + bias, dim=1)
+        else:
+            PagIx = F.softmax(outputs, dim=1)
 
         for p in PagIx:
 
@@ -208,48 +214,4 @@ for dataset, bias_mask, params in zip(datasets, bias_masks, datasets_params):
     db[:, 10] = np.array(synth_a)
     db[:, 11] = np.array(synth_g)
 
-    np.savetxt(f'resources/imdb_synth/imdb_synth_{dataset}.csv', db, fmt='%s', delimiter=',')
-    
-    # softmax = torch.rand(len(ages) * 2) + bias
-
-    # PagIx = F.softmax(softmax, dim=0)
-
-    # PagIx_lcm = (PaIag_PgIag * PagIx.unsqueeze(1)).sum(0)
-
-    # ymax = max(PagIx_lcm)
-
-    # PagIx_lcm = PagIx_lcm.numpy()
-
-    # for _ in range(100):
-
-        # line = np.random.choice(np.arange(180), p=PagIx_lcm)
-        # plt.vlines(line, ymin=0, ymax=ymax)
-
-    # plt.plot(range(len(PagIx_lcm)), PagIx_lcm, c='red')
-
-    # plt.show()
-
-
-
-# PaIx_lcm = PagIx_lcm.reshape(2, -1).sum(0)
-# PgIx_lcm = PagIx_lcm.reshape(2, -1).sum(1)
-
-# '''
-
-
-
-## bias
-
-''' 
-bias = np.ones(90)
-
-bias[np.arange(45)] = 0
-
-bias = np.array([*bias, *bias])
-
-bias = bias.reshape(2, -1).sum(0)
-
-plt.plot(range(len(bias)), bias)
-
-# plt.show()
-'''
+    np.savetxt(f'resources/imdb_synth/imdb_synth_{dataset}_senet.csv', db, fmt='%s', delimiter=',')

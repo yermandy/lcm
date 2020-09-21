@@ -1,8 +1,11 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+import sys
+root = '/'.join(sys.path[0].split('/')[:-1])
+sys.path.append(root)
 
-dataset = np.genfromtxt('resources/imdb.csv', delimiter=',', dtype='str')
+dataset = np.genfromtxt(f'{root}/resources/imdb.csv', delimiter=',', dtype='str')
 
 folders = dataset[:, 13]
 
@@ -18,9 +21,9 @@ db1 = dataset[:third]
 db2 = dataset[third:2 * third]
 db3 = dataset[2 * third:]
 
-np.savetxt('resources/imdb_synth/imdb_1.csv', db1, fmt='%s', delimiter=',')
-np.savetxt('resources/imdb_synth/imdb_2.csv', db2, fmt='%s', delimiter=',')
-np.savetxt('resources/imdb_synth/imdb_3.csv', db3, fmt='%s', delimiter=',')
+np.savetxt(f'{root}/resources/imdb_synth/imdb_1.csv', db1, fmt='%s', delimiter=',')
+np.savetxt(f'{root}/resources/imdb_synth/imdb_2.csv', db2, fmt='%s', delimiter=',')
+np.savetxt(f'{root}/resources/imdb_synth/imdb_3.csv', db3, fmt='%s', delimiter=',')
 
 
 
