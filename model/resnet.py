@@ -108,10 +108,10 @@ class ResNet(nn.Module):
 
     def __init__(self, block, layers, num_classes=1000, zero_init_residual=False,
                  groups=1, width_per_group=64, replace_stride_with_dilation=None,
-                 norm_layer=None):
+                 norm_layer=None, model_name='resnet'):
         super(ResNet, self).__init__()
         
-        self.model_name = 'resnet50'
+        self.model_name = model_name
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
         self._norm_layer = norm_layer
@@ -213,8 +213,6 @@ class ResNet(nn.Module):
 
 
 def _resnet(block, layers, **kwargs):
-    if 'num_classes' in kwargs:
-        return ResNet(block, layers, kwargs['num_classes'])
     return ResNet(block, layers, **kwargs)
 
 
@@ -222,21 +220,21 @@ def resnet18(**kwargs):
     r"""ResNet-18 model from
     `"Deep Residual Learning for Image Recognition" <https://arxiv.org/pdf/1512.03385.pdf>`_
     """
-    return _resnet(BasicBlock, [2, 2, 2, 2], **kwargs)
+    return _resnet(BasicBlock, [2, 2, 2, 2], model_name='resnet18', **kwargs)
 
 
 def resnet34(**kwargs):
     r"""ResNet-34 model from
     `"Deep Residual Learning for Image Recognition" <https://arxiv.org/pdf/1512.03385.pdf>`_
     """
-    return _resnet(BasicBlock, [3, 4, 6, 3], **kwargs)
+    return _resnet(BasicBlock, [3, 4, 6, 3], model_name='resnet34', **kwargs)
 
 
 def resnet50(**kwargs):
     r"""ResNet-50 model from
     `"Deep Residual Learning for Image Recognition" <https://arxiv.org/pdf/1512.03385.pdf>`_
     """
-    return _resnet(Bottleneck, [3, 4, 6, 3], **kwargs)
+    return _resnet(Bottleneck, [3, 4, 6, 3], model_name='resnet50', **kwargs)
 
 
 def resnet101(**kwargs):

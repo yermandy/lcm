@@ -91,9 +91,9 @@ class LCM(nn.Module):
             PaIag_PgIag = PaIag_PgIag_d[d]
 
             ## p(â,ĝ|x,d) = p(â|a,g) * p(ĝ|a,g) * p(a,g|x)            
-            # output = (PaIag_PgIag * p.unsqueeze(1)).sum(0)
-            # output = output / output.sum()
-            outputs[i] = (PaIag_PgIag * p.unsqueeze(1)).sum(0)
+            output = (PaIag_PgIag * p.unsqueeze(1)).sum(0)
+            output = output / output.sum()
+            outputs[i] = output
 
         if return_PagIx:
             return outputs, PagIx
