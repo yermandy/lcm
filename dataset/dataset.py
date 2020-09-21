@@ -11,6 +11,7 @@ from copy import deepcopy
 # Allow truncated images to be loaded
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 Image.warnings.filterwarnings("ignore", "(Possibly )?corrupt EXIF data", UserWarning)
+
 # Allow large image files
 Image.MAX_IMAGE_PIXELS = None
 Image.warnings.simplefilter('ignore', Image.DecompressionBombWarning)
@@ -108,18 +109,18 @@ class RandomDataset(Dataset):
         return self.values[index], self.labels[index]
 
 
-def combine_datasets(datasets, dataset_n=None):
+def combine_datasets(datasets, dataset_id=None):
     combined_db = None
     combined_folders = []
     ages = []
-    for dataset_id, (path, landmarks_path, folders) in enumerate(datasets):
+    for id, (path, folders) in enumerate(datasets.values()):
         
-        print(f'{dataset_id}: {path}')
+        print(f'{id}: {path}')
 
         folders = deepcopy(folders)
 
         db = np.genfromtxt(path, delimiter=',', skip_header=1, dtype=str)
-        db[:, 13] = np.char.add(f'{dataset_id}_', db[:, 13])
+        db[:, 13] = np.char.add(f'{id}_', db[:, 13])
 
         gender_filter = np.flatnonzero((db[:, 11] == 'F') | (db[:, 11] == "M"))
         db = db[gender_filter]
@@ -129,17 +130,17 @@ def combine_datasets(datasets, dataset_n=None):
         unique_ages = unique_ages[age_filter]
         ages.append(unique_ages)
 
-        if dataset_n is not None and dataset_id != dataset_n:
+        if dataset_id is not None and id != dataset_id:
             continue
 
-        if landmarks_path != '':
-            landmarks = np.genfromtxt(landmarks_path, delimiter=',', dtype=int)[:, 1:]
-            db = np.hstack((db, landmarks))
+        # if landmarks_path != '':
+        #     landmarks = np.genfromtxt(landmarks_path, delimiter=',', dtype=int)[:, 1:]
+        #     db = np.hstack((db, landmarks))
 
         for folder in folders:        
             for array in folder:
                 for idx, k in enumerate(array):
-                    array[idx] = f'{dataset_id}_{k}'
+                    array[idx] = f'{id}_{k}'
 
         if combined_db is not None:
             combined_db = np.concatenate((combined_db, db))
