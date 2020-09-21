@@ -1,13 +1,16 @@
+import sys
+sys.path.append('/'.join(sys.path[0].split('/')[:-1]))
+
 import numpy as np
 import matplotlib.pyplot as plt
 
-g_poly = np.array([-1.1, -0.155, 0.0017])
+g_poly = np.array([-3, 0.02, 0.0001])
 z1 = np.array([g_poly, -g_poly])
 
-g_poly = np.array([0, -0.155, 0.0017])
+g_poly = np.array([-0.7, -0.04, -0.0001])
 z2 = np.array([g_poly, -g_poly])
 
-g_poly = np.array([-1, -0.1, 0.0012])
+g_poly = np.array([-1, -0.02, 0.0002])
 z3 = np.array([g_poly, -g_poly])
 
 ages = np.arange(1, 91)

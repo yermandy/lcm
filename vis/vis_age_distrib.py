@@ -1,3 +1,6 @@
+import sys
+sys.path.append('/'.join(sys.path[0].split('/')[:-1]))
+
 import numpy as np
 import matplotlib.pyplot as plt
 

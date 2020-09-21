@@ -1,3 +1,6 @@
+import sys
+sys.path.append('/'.join(sys.path[0].split('/')[:-1]))
+
 import torch
 
 import numpy as np
@@ -142,13 +145,13 @@ def vis_mu():
         mus_mean.append(mus_pred)
         
         for j, (ax, mu_pred) in enumerate(zip(axes[:, i], mus_pred)):
-            ax.plot(ages, mu_pred[0], label='μ female')
-            ax.plot(ages, mu_pred[1], label='μ male')
+            ax.plot(ages, mu_pred[0], label='μ female', c='tab:blue')
+            ax.plot(ages, mu_pred[1], label='μ male', c='tab:orange')
 
             if plot_true:
                 mu_true = mus_true[j]
-                ax.plot(ages, mu_true[0], label='μ true female')
-                ax.plot(ages, mu_true[1], label='μ true male')
+                ax.plot(ages, mu_true[0], label='μ true female', c='tab:blue', ls='--')
+                ax.plot(ages, mu_true[1], label='μ true male', c='tab:orange', ls='--')
 
             if plot_x_eq_y:
                 ax.plot(ages, ages, ls='--', c='black')
@@ -159,13 +162,13 @@ def vis_mu():
     mus_mean = np.mean(mus_mean, axis=0)
     
     for i, (mu_mean, ax) in enumerate(zip(mus_mean, axes[:, len(splits)])):
-        ax.plot(ages, mu_mean[0], label='μ female')
-        ax.plot(ages, mu_mean[1], label='μ male')
+        ax.plot(ages, mu_mean[0], label='μ female', c='tab:blue')
+        ax.plot(ages, mu_mean[1], label='μ male', c='tab:orange')
         
         if plot_true:
             mu_true = mus_true[i]
-            ax.plot(ages, mu_true[0], label='μ true female')
-            ax.plot(ages, mu_true[1], label='μ true male')
+            ax.plot(ages, mu_true[0], label='μ true female', c='tab:blue', ls='--')
+            ax.plot(ages, mu_true[1], label='μ true male', c='tab:orange', ls='--')
 
         if plot_x_eq_y:
             ax.plot(ages, ages, ls='--', c='black')
@@ -205,16 +208,16 @@ def vis_sigma():
         sigmas_mean.append(sigmas_pred)
 
         for j, (ax, sigma_pred) in enumerate(zip(axes[:, i], sigmas_pred)):
-            ax.plot(ages, sigma_pred[0], label='σ female')
-            ax.plot(ages, sigma_pred[1], label='σ male')
+            ax.plot(ages, sigma_pred[0], label='σ female', c='tab:blue')
+            ax.plot(ages, sigma_pred[1], label='σ male', c='tab:orange')
 
             sigma_pred_0.append(sigma_pred[0])
             sigma_pred_1.append(sigma_pred[1])
             
             if plot_true:
                 sigma_true = sigmas_true[j]
-                ax.plot(ages, sigma_true[0], label='σ true female')
-                ax.plot(ages, sigma_true[1], label='σ true male')
+                ax.plot(ages, sigma_true[0], label='σ true female', c='tab:blue', ls='--')
+                ax.plot(ages, sigma_true[1], label='σ true male', c='tab:orange', ls='--')
 
             ax.legend()
 
@@ -222,14 +225,14 @@ def vis_sigma():
     sigmas_mean = np.mean(sigmas_mean, axis=0)
     
     for i, (sigma_mean, ax) in enumerate(zip(sigmas_mean, axes[:, len(splits)])):
-        ax.plot(ages, sigma_mean[0], label='σ female')
-        ax.plot(ages, sigma_mean[1], label='σ male')
+        ax.plot(ages, sigma_mean[0], label='σ female', c='tab:blue')
+        ax.plot(ages, sigma_mean[1], label='σ male', c='tab:orange')
         
 
         if plot_true:
             sigma_true = sigmas_true[i]
-            ax.plot(ages, sigma_true[0], label='σ true female')
-            ax.plot(ages, sigma_true[1], label='σ true male')
+            ax.plot(ages, sigma_true[0], label='σ true female', c='tab:blue', ls='--')
+            ax.plot(ages, sigma_true[1], label='σ true male', c='tab:orange', ls='--')
 
         ax.legend()
 
@@ -273,8 +276,8 @@ def vis_gamma(show=False):
 
         for j, (ax, PgIag) in enumerate(zip(axes[:, i], PgIags)):
 
-            ax.plot(ages, PgIag[0], label='female')
-            ax.plot(ages, PgIag[1], label='male')
+            ax.plot(ages, PgIag[0], label='female', c='tab:blue')
+            ax.plot(ages, PgIag[1], label='male', c='tab:orange')
 
             if plot_true:
                 gamma = gamma_true[j]
@@ -283,8 +286,8 @@ def vis_gamma(show=False):
                 Pg0Iag = PgIag[0]
                 Pg1Iag =  PgIag[1]
                 
-                ax.plot(ages, Pg0Iag, label='female true')
-                ax.plot(ages, Pg1Iag, label='male true')
+                ax.plot(ages, Pg0Iag, label='female true', c='tab:blue', ls='--')
+                ax.plot(ages, Pg1Iag, label='male true', c='tab:orange', ls='--')
 
             ax.legend()
 
@@ -292,16 +295,16 @@ def vis_gamma(show=False):
     PgIags_mean = np.mean(PgIags_mean, axis=0)
     
     for i, (PgIag_mean, ax) in enumerate(zip(PgIags_mean, axes[:, len(splits)])):
-        ax.plot(ages, PgIag_mean[0], label='female')
-        ax.plot(ages, PgIag_mean[1], label='male')
+        ax.plot(ages, PgIag_mean[0], label='female', c='tab:blue')
+        ax.plot(ages, PgIag_mean[1], label='male', c='tab:orange')
 
         if plot_true:
             gamma = gamma_true[i]
 
             PgIag = sigmoid(-1 * gamma)
 
-            ax.plot(ages, PgIag[0], label='true female')
-            ax.plot(ages, PgIag[1], label='true male')
+            ax.plot(ages, PgIag[0], label='true female', c='tab:blue', ls='--')
+            ax.plot(ages, PgIag[1], label='true male', c='tab:orange', ls='--')
 
 
         ax.legend()

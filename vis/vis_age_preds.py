@@ -1,3 +1,6 @@
+import sys
+sys.path.append('/'.join(sys.path[0].split('/')[:-1]))
+
 import argparse
 import torch
 import torch.nn as nn
@@ -6,35 +9,47 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 
-
 from resnet import resnet50
-from resnet_lcm import resnet50_lcm
+from resnet_lcm import resnet50lcm
 from encoder_decoder import encode_labels, decode_labels, create_encoder_decoder
 from dataset.dataset import ListDataset
 from torch.utils.data import DataLoader
 from PIL import Image
 
+import os
 
 parser = argparse.ArgumentParser(description='Visualization')
 parser.add_argument('--batch_size', default=1, type=int, help='Batch size')
 parser.add_argument('--workers', default=8, type=int, help='Workers number')
 parser.add_argument('--cuda', default=0, type=int, help='Cuda device')
 parser.add_argument('--checkpoint', default='', type=str, help='Path to folder with checkpoints')
-parser.add_argument('--model', default='lcm', type=str, help='Model name')
 parser.add_argument('--dataset_id', default=0, type=int, help='Dataset number')
 args = parser.parse_args()
 
+datasets = {
+    0: 'resources/agedb.csv',
+    1: 'resources/morph.csv',
+    2: 'resources/appa_real.csv',
+    3: 'resources/imdb.csv',
+    4: 'resources/utkf.csv',
+    5: 'resources/lfw.csv',
+    6: 'resources/cpmrd.csv',
+    7: 'resources/inet.csv',
+    8: 'resources/group_photos.csv',
+    9: 'resources/pal.csv',
+    10: 'resources/pub_fig.csv',
+    11: 'resources/school_classes.csv',
+}
 
-
-dataset_path = 'resources/inet.csv'
-lcm_checkpoint = 'results/checkpoints/checkpoints/1_checkpoint.pt'
-resnet50_checkpoint = 'results/checkpoints/checkpoints_06.08_ADAM/1_checkpoint.pt'
+dataset_path = datasets[args.dataset_id]
+lcm_checkpoint = 'results/checkpoints_12.09_12SETS/1_checkpoint.pt'
+resnet50_checkpoint = 'results/checkpoints_06.08_ADAM/1_checkpoint.pt'
 
 encoder, decoder = create_encoder_decoder()
 
 
 def init_loader(dataset_path, folders=['9','10']):
-    dataset = np.genfromtxt(dataset_path, delimiter=',', dtype=str)
+    dataset = np.genfromtxt(dataset_path, delimiter=',', dtype=str, skip_header=1)
 
     mask = np.full(len(dataset), 0, dtype=bool)
     for folder in folders:
@@ -79,7 +94,7 @@ def init_loader(dataset_path, folders=['9','10']):
 
 def init_model(checkpoint, model):
     if model == 'lcm':
-        net = resnet50_lcm(12, num_classes=len(encoder))
+        net = resnet50lcm(12, num_classes=len(encoder))
         net.load_checkpoint(checkpoint)
     elif model == 'resnet50':
         net = resnet50(num_classes=len(encoder))
@@ -94,7 +109,6 @@ if __name__ == "__main__":
     loader = init_loader(dataset_path)
     paths = loader.dataset.paths
     
-    model = init_model(resnet50_checkpoint, 'resnet50').to(device)
     model_lcm = init_model(lcm_checkpoint, 'lcm').to(device)
 
     images = 50
@@ -107,6 +121,11 @@ if __name__ == "__main__":
     cost_matrix = np.transpose(([ages] * len(ages)))
     cost_matrix = np.abs(cost_matrix - ages)
     cost_matrix = torch.Tensor(cost_matrix).to(device)
+
+    show_resnet50 = False
+
+    if show_resnet50:
+        model = init_model(resnet50_checkpoint, 'resnet50').to(device)
 
     for i, (inputs, labels, d, index) in enumerate(loader):
         print(paths[index])
@@ -131,17 +150,22 @@ if __name__ == "__main__":
         PaIx_age = ages[PaIx_idx]
         PaIx = PaIx.detach().cpu().numpy()
 
-        ## ResNet50
-        resnet50_preds = model(inputs)
-        ## p(a,g|x;Θ)
-        resnet50_preds = F.softmax(resnet50_preds, dim=1)
-        resnet50_preds = resnet50_preds[0]
-        resnet50_preds = resnet50_preds.reshape(2, -1).sum(0)
+        if show_resnet50:
 
-        resnet50_idx = torch.argmin(resnet50_preds @ cost_matrix)
-        resnet50_age = ages[resnet50_idx]
+            ## ResNet50
+            resnet50_preds = model(inputs)
+            ## p(a,g|x;Θ)
+            resnet50_preds = F.softmax(resnet50_preds, dim=1)
+            resnet50_preds = resnet50_preds[0]
+            resnet50_preds = resnet50_preds.reshape(2, -1).sum(0)
 
-        resnet50_preds = resnet50_preds.detach().cpu().numpy()
+            resnet50_idx = torch.argmin(resnet50_preds @ cost_matrix)
+            resnet50_age = ages[resnet50_idx]
+
+            resnet50_preds = resnet50_preds.detach().cpu().numpy()
+
+            axes[i, 1].plot(ages, resnet50_preds, label='ResNet: p(a)')
+            axes[i, 1].axvline(resnet50_age, label=f'ResNet age: {resnet50_age} ({int(abs(resnet50_age - true_age))})', c='brown', lw=1)
 
 
         image = Image.open(f'dataset/{paths[index]}').convert('RGB')
@@ -150,10 +174,8 @@ if __name__ == "__main__":
         image = loader.dataset.crop_face(image, box)
 
         axes[i, 0].imshow(image)
-
         axes[i, 1].plot(database_ages, PaIx, label='LCM: p(a)')
         axes[i, 1].plot(ages, lcm_preds, label='LCM: p(â)')
-        axes[i, 1].plot(ages, resnet50_preds, label='ResNet: p(a)')
 
         ## true age
         true_age, true_gender = decode_labels(labels.detach().cpu().numpy(), decoder)
@@ -162,7 +184,6 @@ if __name__ == "__main__":
         axes[i, 1].axvline(PaIx_age, label=f'p(a|x): {int(PaIx_age)} ({int(abs(PaIx_age - true_age))})', c='red', lw=1)
         axes[i, 1].axvline(lcm_age, label=f'p(â|x): {int(lcm_age)} ({int(abs(lcm_age - true_age))})', c='magenta', lw=1)
         axes[i, 1].axvline(true_age, label=f'true age: {int(true_age)}', c='purple', lw=1)
-        axes[i, 1].axvline(resnet50_age, label=f'ResNet age: {resnet50_age} ({int(abs(resnet50_age - true_age))})', c='brown', lw=1)
 
 
 
@@ -170,7 +191,9 @@ if __name__ == "__main__":
 
 
     plt.tight_layout()
-    plt.savefig('vis.png', dpi=150)
+
+    dataset_name = dataset_path.split('/')[-1].split('.')[0]
+    plt.savefig(f'vis/vis_{dataset_name}.png', dpi=150)
 
 
     # print(prediction_results)

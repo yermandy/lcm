@@ -1,9 +1,12 @@
+import sys
+sys.path.append('/'.join(sys.path[0].split('/')[:-1]))
+
 import torch
 import argparse
 
 import numpy as np
 import matplotlib.pyplot as plt
-from resnet_lcm import resnet50_lcm
+from model.resnet_lcm import resnet50lcm
 from vis_age_preds import init_loader
 from config import folders_10, folders_3, folders_8
 from encoder_decoder import EncoderDecoder
@@ -16,7 +19,7 @@ parser.add_argument('--workers', default=8, type=int, help='Workers number')
 parser.add_argument('--cuda', default=0, type=int, help='Cuda device')
 parser.add_argument('--checkpoint', default='', type=str, help='Checkpoint path')
 parser.add_argument('--model', default='lcm', type=str, help='Model name')
-parser.add_argument('--dataset_n', default=None, type=int, help='Dataset number')
+parser.add_argument('--dataset_id', default=None, type=int, help='Dataset number')
 args = parser.parse_args()
 
 
@@ -116,7 +119,7 @@ for ax, bias_mean in zip(axes, bias_means):
         
 #         checkpoint_name = f'results/checkpoints/checkpoints/{checkpoint_id}_checkpoint.pt'
         
-#         net = resnet50_lcm(len(databases), num_classes=len(encoder))
+#         net = resnet50lcm(len(databases), num_classes=len(encoder))
 #         net.load_checkpoint(checkpoint_name)
 
 #         # init_loader(db, ['9, 10'])
