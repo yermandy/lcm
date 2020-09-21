@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from os import makedirs
 
 
-def _plot(args, from_epoch=1, fontsize = 14):
+def _plot(args, from_epoch=1, fontsize=14, path='results/plots'):
     fig, ax = plt.subplots(1, 1, figsize=(8, 5))
 
     for curve, label in args['curves']:
@@ -14,50 +14,50 @@ def _plot(args, from_epoch=1, fontsize = 14):
     ax.set_xlabel(args['x_label'], fontsize=fontsize)
     ax.set_ylabel(args['y_label'], fontsize=fontsize)
     
-    path = 'results/plots'
+    path += '/plots'
     makedirs(path, exist_ok=True)
     img_path = f'{path}/{args["plot_name"]}'
     fig.savefig(img_path, dpi = 300, bbox_inches='tight')
     plt.close()
 
 
-def plot_accuracy(curves: tuple, fold_number):
+def plot_accuracy(curves: tuple, fold_number, path):
     _plot({
         'curves': curves,
-        'plot_name': f'{fold_number}accuracy.png',
+        'plot_name': f'{fold_number}_accuracy.png',
         'x_label': 'Epoch',
         'y_label': 'Accuracy'
-    })
+    }, path=path)
 
 
-def plot_mae(curves: tuple, fold_number):
+def plot_mae(curves: tuple, fold_number, path):
     _plot({
         'curves': curves,
         'plot_name': f'{fold_number}_mae.png',
         'x_label': 'Epoch',
         'y_label': 'MAE'
-    })
+    }, path=path)
 
 
-def plot_gerr(curves: tuple, fold_number):
+def plot_gerr(curves: tuple, fold_number, path):
     _plot({
         'curves': curves,
         'plot_name': f'{fold_number}_gerr.png',
         'x_label': 'Epoch',
         'y_label': 'GERR'
-    })
+    }, path=path)
 
 
-def plot_cs5(curves: tuple, fold_number):
+def plot_cs5(curves: tuple, fold_number, path):
     _plot({
         'curves': curves,
         'plot_name': f'{fold_number}_cs5.png',
         'x_label': 'Epoch',
         'y_label': 'CS5'
-    })
+    }, path=path)
 
 
-def plot_results(results: dict, fold_number):
+def plot_results(results: dict, fold_number, path):
     mae, gerr, cs5 = [], [], []
     
     stages = ('Training', 'Validation', 'Testing')
@@ -66,12 +66,12 @@ def plot_results(results: dict, fold_number):
         gerr.append((curve['gerr'], stage))
         cs5.append((curve['cs5'], stage))
 
-    plot_mae(mae, fold_number)
-    plot_gerr(gerr, fold_number)
-    plot_cs5(cs5, fold_number)
+    plot_mae(mae, fold_number, path)
+    plot_gerr(gerr, fold_number, path)
+    plot_cs5(cs5, fold_number, path)
 
 
-def plot_age_density(dicts: list, folds_n):
+def plot_age_density(dicts: list, folds_n, path='results/plots'):
     
     def subplot(dict, ls='-', label='', c=''):
         count = np.array(list(dict.values())) / folds_n
@@ -91,12 +91,13 @@ def plot_age_density(dicts: list, folds_n):
     ax.legend()
     ax.set_xlabel('real age')
     ax.set_ylabel('pdf')
-    path = 'results/plots'
+
+    path += '/plots'
     makedirs(path, exist_ok=True)
     plt.savefig(f'{path}/age_density.png', dpi=300, bbox_inches='tight')
 
 
-def plot_age_mae(dict, folds_n):
+def plot_age_mae(dict, folds_n, path='results/plots'):
 
     def subplot(subdict, label):    
         
@@ -120,6 +121,7 @@ def plot_age_mae(dict, folds_n):
     ax.legend()
     ax.set_xlabel('real age')
     ax.set_ylabel('mae')
-    path = 'results/plots'
+    
+    path += '/plots'
     makedirs(path, exist_ok=True)
     plt.savefig(f'{path}/age_mae.png', dpi=300, bbox_inches='tight')

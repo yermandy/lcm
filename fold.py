@@ -3,9 +3,10 @@ from torch.utils.data import DataLoader
 from copy import deepcopy
 from dataset.dataset import combine_datasets, create_fold_stages
 from encoder_decoder import EncoderDecoder
-from resnet import resnet50
-from resnet_lcm import resnet50_lcm
 
+from model.resnet import resnet50, resnet18
+from model.resnet_lcm import resnet50lcm, resnet18lcm
+from model.senet import se_resnet18
 
 class Fold():
     
@@ -31,9 +32,7 @@ class Fold():
 
 
 def create_folds(datasets, args, device):
-    enc_dec = EncoderDecoder()
-
-    combined_db, combined_folds, datasets_ages = combine_datasets(datasets, args.dataset_n)
+    combined_db, combined_folds, datasets_ages = combine_datasets(datasets, args.dataset_id)
 
     loader_args = {
         'num_workers': args.workers,
@@ -47,10 +46,16 @@ def create_folds(datasets, args, device):
     for i, selected_folders in enumerate(combined_folds):
         stages = create_fold_stages(combined_db, selected_folders)
 
-        if args.model == 'lcm':
-            net = resnet50_lcm(len(datasets), num_classes=len(enc_dec)).to(device)
-        else:
-            net = resnet50(num_classes=len(enc_dec)).to(device)
+        if args.model == 'resnet50lcm':
+            net = resnet50lcm(len(datasets), num_classes=len(EncoderDecoder())).to(device)
+        elif args.model == 'resnet50':
+            net = resnet50(num_classes=len(EncoderDecoder())).to(device)
+        elif args.model == 'resnet18':
+            net = resnet18(num_classes=len(EncoderDecoder())).to(device)
+        elif args.model == 'resnet18lcm':
+            net = resnet18lcm(len(datasets), num_classes=len(EncoderDecoder())).to(device)
+        elif args.model == 'se_resnet18':
+            net = se_resnet18(num_classes=len(EncoderDecoder())).to(device)
 
         folds.append(Fold(net, stages, loader_args, i + 1))
 

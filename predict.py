@@ -1,15 +1,16 @@
 import numpy as np
-import argparse
+from parser import args
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim import Adam, SGD
 
-from resnet import resnet18, resnet50
-from resnet_lcm import resnet50_lcm
+from model.resnet import resnet50, ResNet
+from model.resnet_lcm import resnet50lcm
+
 from dataset.dataset import combine_datasets, create_fold_stages
-from plot import plot_accuracy, plot_mae, plot_results, plot_age_density, plot_age_mae
+from plot import plot_mae, plot_results, plot_age_density, plot_age_mae
 from os import makedirs
 from copy import deepcopy
 from fold import create_folds
@@ -19,31 +20,22 @@ from encoder_decoder import EncoderDecoder
 from tqdm import tqdm
 
 
-parser = argparse.ArgumentParser(description='Prediction')
-parser.add_argument('--batch_size', default=64, type=int, help='Batch size')
-parser.add_argument('--workers', default=8, type=int, help='Workers number')
-parser.add_argument('--cuda', default=0, type=int, help='Cuda device')
-parser.add_argument('--checkpoints', default='', type=str, help='Path to folder with checkpoints')
-parser.add_argument('--model', default='lcm', type=str, help='Model name')
-parser.add_argument('--dataset_n', default=None, type=int, help='Dataset number')
-args = parser.parse_args()
-
-makedirs('results/checkpoints', exist_ok=True)
+# makedirs('results/checkpoints', exist_ok=True)
 
 
 
-def predict(net : resnet50, loader, desc='', return_statistics=False):
+def predict(net : ResNet, loader, desc='', return_statistics=False):
     
     device = next(net.parameters()).device
     net.eval()
 
     age_labels = np.arange(1, 91, 1, dtype=np.float32)
-    cost_matrix = np.transpose(([age_labels] * len(age_labels)))
-    cost_matrix = np.abs(cost_matrix - age_labels)
-    cost_matrix = torch.Tensor(cost_matrix).to(device)
+    a_penalty = np.transpose(([age_labels] * len(age_labels)))
+    a_penalty = np.abs(a_penalty - age_labels)
+    a_penalty = torch.Tensor(a_penalty).to(device)
 
     gender_labels = np.array(['F', 'M'])
-    zero_one_cost = torch.Tensor([[0, 1], [1, 0]]).to(device)
+    g_penalty = torch.Tensor([[0, 1], [1, 0]]).to(device)
 
     total, correct, abs_err_sum, gerr_sum, cs5_sum = [0] * 5
     progress = tqdm(loader)
@@ -72,7 +64,7 @@ def predict(net : resnet50, loader, desc='', return_statistics=False):
             # abs_err_sum += np.abs(age_pred - age_true).sum()
 
 
-            if net.model_name == 'lcm':
+            if 'lcm' in net.model_name:
                 preds, PagIx = net(inputs, d, return_PagIx=True)
 
                 loop = zip(true_age_labels, true_gender_labels, preds, PagIx)
@@ -85,7 +77,7 @@ def predict(net : resnet50, loader, desc='', return_statistics=False):
             
             for loop_item in loop:
 
-                if net.model_name == 'lcm':
+                if 'lcm' in net.model_name:
                     true_age, true_gender, pred, PagIxi = loop_item
                 else:
                     true_age, true_gender, pred = loop_item
@@ -94,7 +86,7 @@ def predict(net : resnet50, loader, desc='', return_statistics=False):
 
                 ## p(â|x;Θ), marginalize over gender
                 PaIx = pred.sum(0)
-                pred_idx = torch.argmin(PaIx @ cost_matrix)
+                pred_idx = torch.argmin(PaIx @ a_penalty)
                 pred_age = age_labels[pred_idx]
 
                 abs_err = np.abs(pred_age - true_age)
@@ -104,7 +96,7 @@ def predict(net : resnet50, loader, desc='', return_statistics=False):
 
                 ## p(ĝ|x;Θ), marginalize over age
                 PgIx = pred.sum(1)
-                pred_idx = torch.argmin(PgIx @ zero_one_cost)
+                pred_idx = torch.argmin(PgIx @ g_penalty)
                 pred_gender = gender_labels[pred_idx]
                 gerr_sum += int(true_gender != pred_gender)
 
@@ -113,7 +105,7 @@ def predict(net : resnet50, loader, desc='', return_statistics=False):
                     age_pred_stat.append(pred_age)
                     ages_distributions.append(PaIx.cpu().numpy())
 
-                    if net.model_name == 'lcm':
+                    if 'lcm' in net.model_name:
                         PagIxi = PagIxi.reshape(2, -1).sum(0)
                         PagIx_stat.append(PagIxi.cpu().numpy())
 
@@ -126,7 +118,7 @@ def predict(net : resnet50, loader, desc='', return_statistics=False):
 
     if return_statistics:
         age_distribution = np.mean(ages_distributions, axis=0)
-        if net.model_name == 'lcm':
+        if 'lcm' in net.model_name:
             PagIx_stat = np.mean(PagIx_stat, axis=0)
             return mae, gerr, cs5, np.array(age_true_stat), np.array(age_pred_stat), age_distribution, PagIx_stat
         else:
@@ -145,7 +137,7 @@ if __name__ == "__main__":
     folds = create_folds(datasets, args, device)
 
     for i, fold in enumerate(folds):
-        fold.net.load_checkpoint(f'{args.checkpoints}/{i + 1}_checkpoint.pt')
+        fold.net.load_checkpoint(f'{args.checkpoints}/checkpoints/{i + 1}_checkpoint_best.pt')
 
     table = PrettyTable()
     table.field_names = ['', 'mae', 'gerr', 'cs5']
@@ -176,7 +168,7 @@ if __name__ == "__main__":
 
             prediction_results = predict(net, loader, loader_name, return_statistics=True)
             
-            if net.model_name == 'lcm':
+            if 'lcm' in net.model_name:
                 mae, gerr, cs5, ages_true_list, ages_pred_list, age_distribution, PagIx_stat = prediction_results
                 PagIx_dict[loader_name] += PagIx_stat
             else:
@@ -209,16 +201,15 @@ if __name__ == "__main__":
 
     distributions = [ages_true_count, age_distribution_dict]
     
-    if net.model_name == 'lcm':
+    if 'lcm' in net.model_name:
         for k, v in PagIx_dict.items():
             PagIx_dict[k] = {age: c for age, c in zip(range(1, 91), v)}
         
         distributions.append(PagIx_dict)
 
    ## plots
-
-    plot_age_density(distributions, len(folds))
-    plot_age_mae(mae_through_ages, len(folds))
+    plot_age_density(distributions, len(folds), args.checkpoints)
+    plot_age_mae(mae_through_ages, len(folds), args.checkpoints)
 
     ## table
     table.clear_rows()

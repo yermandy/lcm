@@ -1,40 +1,25 @@
 import numpy as np
-import argparse
+from parser import args
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim import Adam, SGD
 
+from model.resnet import ResNet
 from tqdm import tqdm
-from resnet import resnet18, resnet50
-from resnet_lcm import resnet50_lcm
-from dataset.dataset import combine_datasets, create_fold_stages
-from plot import plot_accuracy, plot_mae, plot_results
+from plot import plot_results
 from os import makedirs
 from fold import create_folds
-from prettytable import PrettyTable
 from config import *
 from predict import predict
 from encoder_decoder import EncoderDecoder
 
 
-parser = argparse.ArgumentParser(description='Training')
-parser.add_argument('--batch_size', default=16, type=int, help='Batch size')
-parser.add_argument('--workers', default=8, type=int, help='Workers number')
-parser.add_argument('--cuda', default=0, type=int, help='Cuda device')
-parser.add_argument('--checkpoint', default='', type=str, help='Checkpoint path')
-parser.add_argument('--model', default='lcm', type=str, help='Model name')
-parser.add_argument('--dataset_n', default=None, type=int, help='Dataset number')
-args = parser.parse_args()
-
-makedirs('results/checkpoints', exist_ok=True)
-
-
 def train():
 
     device = torch.device(f'cuda:{args.cuda}' if torch.cuda.is_available() else 'cpu')
-    print(f'Running model on: {device}\n')
+    print(f'Running model {args.model} on: {device}\n')
 
     folds = create_folds(datasets, args, device)
 
@@ -43,16 +28,13 @@ def train():
 
     criterion = nn.CrossEntropyLoss()
 
-    table = PrettyTable()
-    table.field_names = ['', 'mae', 'gerr', 'cs5']
-
     for epoch in range(epochs):
 
         epoch_results = []
 
         ## k-Fold Cross-Validation
-        for i_th_fold, fold in enumerate(folds):
-            net : resnet50 = fold.net
+        for fold in folds:
+            net : ResNet = fold.net
             optimizer = fold.optimizer
             results = fold.results
 
@@ -72,7 +54,7 @@ def train():
 
                         inputs = inputs.to(device)
                         
-                        if net.model_name == 'lcm':
+                        if 'lcm' in net.model_name:
                             outputs = net(inputs, d)
                             labels = labels.cpu().numpy()
 
@@ -103,37 +85,48 @@ def train():
                     fold.best_epoch = epoch + 1
                     checkpoint = {
                         'model_state_dict': net.state_dict(),
+                        'datasets': datasets,
                         # 'optimizer_state_dict': optimizer.state_dict(),
-                        'epoch': epoch + 1,
-                        'mae': mae, 'gerr': gerr, 'cs5': cs5,
+                        'epoch': epoch + 1, 'mae': mae, 'gerr': gerr, 'cs5': cs5,
                         'EncoderDecoder': EncoderDecoder()
                     }
-                    torch.save(checkpoint, f'results/checkpoints/{fold.number}_checkpoint.pt')
+                    torch.save(checkpoint, f'{results_path}/checkpoints/{fold.number}_checkpoint_best.pt')
 
                 results[loader_name]['mae'].append(mae)
                 results[loader_name]['gerr'].append(gerr)
                 results[loader_name]['cs5'].append(cs5)
 
-                fold_results.append([mae, gerr, cs5]) 
+                fold_results.append([mae, gerr, cs5])
 
-            plot_results(results, fold.number)
+            plot_results(results, fold.number, results_path)
+
+            checkpoint = {
+                'model_state_dict': net.state_dict(),
+                'datasets': datasets,
+                'epoch': epoch + 1, 'mae': mae, 'gerr': gerr, 'cs5': cs5,
+                'EncoderDecoder': EncoderDecoder()
+            }
+
+            torch.save(checkpoint, f'{results_path}/checkpoints/{fold.number}_checkpoint_last.pt')
 
             epoch_results.append(fold_results)
         
             print()
 
-        table.clear_rows()
-        
-        mean = np.mean(epoch_results, axis=0)
-        std = np.std(epoch_results, axis=0)
-        for stage, mu, sigma in zip(['trn', 'val', 'tst'], mean, std):
-            table.add_row([stage, *[f'{m:.2f} ({s:.2f})' for m, s in zip(mu, sigma)]])
-
-        summary = f'Epoch {epoch + 1} summary:\n{table}\n\n'
-        print(summary)
-        with open('results/checkpoints/summary.txt', 'a') as file:
-            file.write(summary)
-
 
 if __name__ == "__main__":
+    
+    results_path = f'results/model_{args.model}'
+    
+    try:
+        makedirs(results_path)
+    except FileExistsError:
+        print(f'Folder exist: {results_path}.\n\'y\' to continue')
+        input_result = input()
+        if input_result != 'y':
+            exit()
+        print()
+
+    makedirs(f'{results_path}/checkpoints', exist_ok=True)
+
     train()
